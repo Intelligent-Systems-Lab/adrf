@@ -193,17 +193,20 @@
 3. `notifCorrId` 建議與 retrain job / Daisy TID 做一對一綁定。
 4. retrieval 訂閱的 `dataSub` 是物件（object），與 store record 的 `dataSub`（array）不同。
 5. `POST /data-retrieval-subscriptions` 成功回應為 `201 Created`，除了 `Location(.../{subscriptionId})` header，response body 也應包含建立完成的 `NadrfDataRetrievalSubscription`。
+6. UE 範圍 retrieval 應以 `dataSub.smfDataSub.supi` 作為必要過濾鍵之一，避免不同 UE 資料混入同一批 retrain dataset。
 
 
 
 ## 3.4 訂閱當下快照（snapshot）語意
 
 1. 建立 retrieval 訂閱當下，ADRF 記錄 `T_sub`，並立即凍結本次可拉取資料清單。
-2. 資料篩選採兩層條件：
+2. 資料篩選採三層條件：
+   - UE 條件：store record 的 `dataSub[*].smfDataSub.supi` 必須等於 retrieval 訂閱中的 `dataSub.smfDataSub.supi`。
    - 時間窗條件：`notificationItems[*].startTime` 落在 `timePeriod` 內。
    - 快照邊界：該筆資料 `ingestedAt <= T_sub`（以 ADRF 入庫時間判斷；`ingestedAt` 為 ADRF 內部 metadata，不屬於 3GPP 對外 payload 欄位）。
 3. 因此，即使後續新寫入資料其 `startTime` 也落在同一時間窗，本次訂閱也不納入。
 4. 凍結清單完成後，依 store record 順序組出 `fetchCorrIds`，並以 `corrIdBatchSize` 切包發送 callback（每包最多 `corrIdBatchSize` 個 `storeTransId`，`corrIdBatchSize` 由 ADRF 端 `adrfcfg.yaml` 設定）。
+5. `fetchCorrIds` 在 callback 下發前就已完成「SUPI + 時間窗 + 快照邊界」過濾；因此 NWDAF 後續 `GET /data-store-records?fetch-correlation-ids=...` 只需逐 ID 取回，不需再附加 SUPI 查詢條件。
 
 ## 3.5 RetrievalUnsubscribe（V0）
 
@@ -377,10 +380,11 @@ GET /nadrf-datamanagement/v1/data-store-records?fetch-correlation-ids=store-tran
 
 兩者都可行，取決於 ADRF 分批策略；本版採「callback 多筆、fetch 單筆」：
 
-1. 建立訂閱時先記錄 `T_sub`，以「`startTime` 命中 `timePeriod` 且 `ingestedAt <= T_sub`」找出符合的 store records，並凍結清單。
+1. 建立訂閱時先記錄 `T_sub`，以「`smfDataSub.supi` 命中訂閱 SUPI、`startTime` 命中 `timePeriod` 且 `ingestedAt <= T_sub`」找出符合的 store records，並凍結清單。
 2. `fetchCorrIds` 直接使用這些 records 的 `storeTransId`（不加前綴）。
 3. ADRF callback 依 `corrIdBatchSize` 發送 `fetchCorrIds`（每包最多 `corrIdBatchSize` 個 ID，`corrIdBatchSize` 由 ADRF 端 `adrfcfg.yaml` 控制）。
 4. ADRF 每次 GET 回 1 筆 `NadrfDataStoreRecord`（1 `dataSub` + 1 `dataNotif`），NWDAF 逐筆寫入 retrain staging。
+5. fetch 階段不再做 SUPI 重篩，因為 `fetchCorrIds` 清單產生時已完成 SUPI 過濾。
 
 ## 5.3 建議的批次策略（V0）
 
@@ -456,6 +460,7 @@ V0 最小必要欄位：
 1. `retrieval.fetch.corrIdBatchSize`。
 2. `retrieval.snapshot.*`（支援 `T_sub` + `ingestedAt` 快照語意）。
 3. `retrieval.fetch.requireOneIdPerGet=true`（固定一個 ID 一次 GET）。
+4. retrieval 訂閱為 UE 範圍時，`retrieval.snapshot` 的清單凍結需同時套用 `smfDataSub.supi` 條件。
 4. `retrieval.unsubscribe.treat404AsSuccess=true`（V0 收斂策略）。
 5. `storage.*`（Mongo 連線與 collection 定位）。
 
@@ -513,7 +518,7 @@ sequenceDiagram
 1. 資料落地路徑固定為：UPF notify -> NWDAF -> `POST /data-store-records` -> ADRF。
 2. retrieval 固定採 `RetrievalSubscribe(fetch)`：ADRF callback 可一次下發多個 IDs，但 NWDAF fetch 固定逐 ID 請求與逐筆取回。
 3. fetch callback 批次參數 `corrIdBatchSize` 屬於 ADRF 端策略參數，來源為 ADRF 自身 `adrfcfg.yaml`，不綁 NWDAF `nwdafcfg.yaml`。
-4. 以 `T_sub + ingestedAt` 做訂閱快照邊界，避免訂閱建立後新增資料污染同一 retrain 批次。
+4. 以「`smfDataSub.supi` + `T_sub + ingestedAt` + `timePeriod`」做訂閱凍結條件，避免不同 UE 資料混入，且避免訂閱建立後新增資料污染同一 retrain 批次。
 5. 收斂條件明確化：需同時滿足「已取完所有 queued IDs」與「收到 `terminationReq=true`」才結束 retrieval 流程。
 6. RetrievalUnsubscribe 納入主流程：完成或中斷都應送 `DELETE /data-retrieval-subscriptions/{subscriptionId}`，`204` 視為成功、`404` 視為已清理、`5xx` 走有限重試。
 7. `dataSub + dataNotif` 仍為本版資料面主形狀，保持 TS 29.575 對 `NadrfDataStoreRecord` 的一致性。
