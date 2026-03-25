@@ -55,12 +55,22 @@
 3. `Run()` 啟 server goroutine；`Shutdown()/Stop()` 做 graceful shutdown。
 4. route group 由常數驅動（不要硬編字串散落）。
 
+### 3.4 Logger 寫法（必須對齊 free5gc）
+
+請直接比照 SMF/NWDAF/UPF 的 logger pattern：
+
+1. 使用 `github.com/free5gc/util/logger` 建立單一 `Log`。
+2. 以 `FieldNF` + `FieldCategory` 建立 category entry（如 `MainLog`, `InitLog`, `CfgLog`, `SBILog`）。
+3. 各層模組只拿對應 category log，不自行建第二套 logger。
+4. log message 以英文為主，欄位與語意命名一致、可 grep。
+
 ## 4. ADRF 建議目錄（free5gc-aligned）
 
 ```text
 adrf/
   cmd/main.go
   go.mod
+  .golangci.yml
   config/adrfcfg.yaml
   pkg/
     app/app.go
@@ -211,10 +221,22 @@ logger:
 
 ### 9.3 合併前檢查
 
-1. `go test ./...`
-2. `go fmt` / `gofmt` 統一格式。
-3. API status code 與 `Location` header 行為和 spec 一致。
-4. 文件同步更新（`docs/contract`、`docs/impl`）。
+以下檢查指令視為標準流程（你的要求）：
+
+1. `go fmt ./...`
+2. `docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...`
+3. `go vet ./...`
+4. `go build ./...`
+5. `go test ./...`
+
+此外，repo root 必須有 `.golangci.yml`，避免 lint 規則漂移。
+
+### 9.4 註解規範（必須）
+
+1. 註解語言必須是英文。
+2. 關鍵設計邏輯（state transition、idempotency、snapshot、error mapping、retry）必須有詳細註解。
+3. 對外 API handler、核心 processor、store/index、ID generation 都要有足夠註解，讓 reviewer 可直接理解設計意圖。
+4. 只寫「有價值的註解」：說明 why / invariants / constraints，不只描述程式碼表面動作。
 
 ## 10. 實作策略建議（落地順序）
 
