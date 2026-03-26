@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -15,10 +16,18 @@ import (
 // Implemented operations are routed to dedicated handler modules. Operations
 // that are not supported yet return a structured "not implemented" response.
 type Processor struct {
-	dataStoreRepo *store.DataStoreRepository
+	dataStoreRepo dataStoreRecordWriter
 }
 
-func NewProcessor(dataStoreRepo *store.DataStoreRepository) *Processor {
+// dataStoreRecordWriter is the persistence dependency needed by the store API.
+//
+// A narrow interface keeps the processor testable without a live Mongo instance,
+// while still allowing the concrete repository to be injected in production.
+type dataStoreRecordWriter interface {
+	InsertDataStoreRecord(ctx context.Context, doc *store.NadrfDataStoreRecordDocument) error
+}
+
+func NewProcessor(dataStoreRepo dataStoreRecordWriter) *Processor {
 	return &Processor{
 		dataStoreRepo: dataStoreRepo,
 	}
