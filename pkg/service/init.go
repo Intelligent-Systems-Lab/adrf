@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -14,8 +15,10 @@ import (
 	"github.com/free5gc/adrf/internal/sbi"
 	"github.com/free5gc/adrf/internal/sbi/consumer"
 	"github.com/free5gc/adrf/internal/sbi/processor"
+	"github.com/free5gc/adrf/internal/store"
 	"github.com/free5gc/adrf/pkg/app"
 	"github.com/free5gc/adrf/pkg/factory"
+	"github.com/free5gc/util/mongoapi"
 )
 
 var _ app.App = &AdrfApp{}
@@ -27,6 +30,7 @@ type AdrfApp struct {
 	cancel    context.CancelFunc
 	consumer  *consumer.Consumer
 	processor *processor.Processor
+	dataStore *store.DataStoreRepository
 	sbiServer *sbi.Server
 	wg        sync.WaitGroup
 }
@@ -49,13 +53,17 @@ func NewApp(ctx context.Context, cfg *factory.Config) (*AdrfApp, error) {
 	adrf.adrfCtx = adrf_context.GetSelf()
 	adrf.adrfCtx.AdrfName = cfg.GetAdrfName()
 
+	if cfg.Configuration != nil && cfg.Configuration.Mongodb != nil {
+		adrf.dataStore = store.NewDataStoreRepository(cfg.Configuration.Mongodb.Name)
+	}
+
 	var err error
 	adrf.consumer, err = consumer.NewConsumer()
 	if err != nil {
 		return nil, err
 	}
 
-	adrf.processor = processor.NewProcessor()
+	adrf.processor = processor.NewProcessor(adrf.dataStore)
 
 	adrf.sbiServer, err = sbi.NewServer(adrf)
 	if err != nil {
@@ -107,6 +115,7 @@ func (a *AdrfApp) SetReportCaller(reportCaller bool) {
 
 func (a *AdrfApp) Start() {
 	logger.InitLog.Infoln("ADRF server started")
+	a.initMongoDataStore()
 
 	a.wg.Add(1)
 	go a.listenShutdownEvent()
@@ -147,4 +156,48 @@ func (a *AdrfApp) terminateProcedure() {
 func (a *AdrfApp) WaitRoutineStopped() {
 	a.wg.Wait()
 	logger.MainLog.Infof("ADRF app is terminated")
+}
+
+// initMongoDataStore initializes Mongo client connectivity and index bootstrap.
+func (a *AdrfApp) initMongoDataStore() {
+	logger.InitLog.Info("Initializing MongoDB data store bootstrap")
+
+	if a.cfg == nil || a.cfg.Configuration == nil || a.cfg.Configuration.Mongodb == nil {
+		logger.InitLog.Warn("MongoDB configuration is missing; skip data store bootstrap")
+		return
+	}
+
+	mongodb := a.cfg.Configuration.Mongodb
+	if mongodb.Name == "" || mongodb.Url == "" {
+		logger.InitLog.Warn("MongoDB name/url is empty; skip data store bootstrap")
+		return
+	}
+
+	logger.InitLog.Infof("Configuring MongoDB client: db=%s url=%s", mongodb.Name, mongodb.Url)
+	if err := mongoapi.SetMongoDB(mongodb.Name, mongodb.Url); err != nil {
+		logger.InitLog.Errorf("Failed to initialize MongoDB client: %v", err)
+		return
+	}
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := mongoapi.Client.Ping(pingCtx, nil); err != nil {
+		logger.InitLog.Errorf("MongoDB ping failed (%s): %v", mongodb.Url, err)
+		return
+	}
+	logger.InitLog.Infof("MongoDB connected: %s", mongodb.Url)
+
+	if a.dataStore == nil {
+		a.dataStore = store.NewDataStoreRepository(mongodb.Name)
+		logger.InitLog.Infof("DataStore repository initialized: db=%s", mongodb.Name)
+	}
+
+	indexCtx, indexCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer indexCancel()
+	if err := a.dataStore.EnsureIndexes(indexCtx); err != nil {
+		logger.InitLog.Errorf("Failed to ensure MongoDB indexes: %v", err)
+		return
+	}
+
+	logger.InitLog.Info("MongoDB data store index bootstrap completed")
 }
