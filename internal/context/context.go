@@ -12,10 +12,8 @@ var (
 
 // ADRFContext holds process-wide runtime metadata.
 //
-// R01 intentionally keeps this structure small because ADRF state machines
-// (store index, retrieval snapshots, fetch progression, retry counters) will be
-// introduced in later rounds. A stable singleton is still created now so future
-// state can be added without changing package boundaries.
+// The structure is intentionally small. Additional runtime state can be added
+// incrementally without changing package boundaries.
 type ADRFContext struct {
 	AdrfName  string
 	StartTime time.Time
