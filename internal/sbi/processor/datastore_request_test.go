@@ -67,7 +67,7 @@ func TestCreateDataStoreRecordSuccess(t *testing.T) {
 	router := newStoreRequestRouter(NewProcessor(repo))
 
 	response := performStoreRequest(router, validStorePayload(), func(req *http.Request) {
-		req.Host = "adrf.local"
+		req.Host = retrievalTestAdrfHost
 	})
 
 	if response.Code != http.StatusCreated {
@@ -75,7 +75,8 @@ func TestCreateDataStoreRecordSuccess(t *testing.T) {
 	}
 
 	location := response.Header().Get("Location")
-	if !strings.HasPrefix(location, "http://adrf.local/nadrf-datamanagement/v1/data-store-records/") {
+	expectedLocationPrefix := "http://" + retrievalTestAdrfHost + "/nadrf-datamanagement/v1/data-store-records/"
+	if !strings.HasPrefix(location, expectedLocationPrefix) {
 		t.Fatalf("unexpected Location header: %s", location)
 	}
 

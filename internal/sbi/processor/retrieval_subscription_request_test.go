@@ -20,7 +20,10 @@ type stubRetrievalNotifier struct {
 	err      error
 }
 
-const retrievalTestNotifCorrID = "retrain-job-001"
+const (
+	retrievalTestNotifCorrID = "retrain-job-001"
+	retrievalTestAdrfHost    = "adrf.local"
+)
 
 func (s *stubRetrievalNotifier) SendFetchInstructions(
 	_ context.Context,
@@ -59,7 +62,7 @@ func TestCreateDataRetrievalSubscriptionSuccess(t *testing.T) {
 	router := newRetrievalSubscriptionRouter(processor)
 
 	response := performRetrievalSubscriptionRequest(router, validRetrievalSubscriptionPayload(), func(req *http.Request) {
-		req.Host = "adrf.local"
+		req.Host = retrievalTestAdrfHost
 	})
 
 	if response.Code != http.StatusCreated {
@@ -67,7 +70,7 @@ func TestCreateDataRetrievalSubscriptionSuccess(t *testing.T) {
 	}
 
 	location := response.Header().Get("Location")
-	prefix := "http://adrf.local/nadrf-datamanagement/v1/data-retrieval-subscriptions/"
+	prefix := "http://" + retrievalTestAdrfHost + "/nadrf-datamanagement/v1/data-retrieval-subscriptions/"
 	if !strings.HasPrefix(location, prefix) {
 		t.Fatalf("unexpected Location header: %s", location)
 	}
