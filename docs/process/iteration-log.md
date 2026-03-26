@@ -164,3 +164,63 @@ Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
 
 ### Next Round Plan
 - Implement retrieval subscription persistence model and fetch-queue metadata.
+
+---
+
+## Round R03 - 2026-03-26 15:54 (UTC+8)
+
+### Pre-Check (before coding)
+- Goal: Complete `POST /data-store-records` success and strict error behavior.
+- Scope (in):
+  - `201 Created + Location + body`
+  - strict `ProblemDetails` mapping for request/persistence failures
+  - handler unit tests for key success/failure paths
+- Scope (out):
+  - retrieval APIs (`POST/DELETE /data-retrieval-subscriptions`, `GET /data-store-records`)
+  - OAuth2 behavior
+- Required docs re-read:
+  - docs/contract/adrf1.md (store and error behavior sections)
+  - docs/impl/adrf-free5gc-alignment-guide.md (response + ProblemDetails style)
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml (`/data-store-records` response and error codes)
+- Constraints confirmed:
+  - free5gc-style logger usage
+  - English maintainer-facing comments
+  - validation command set
+
+### Implementation
+- Files changed:
+  - `internal/sbi/processor/datastore_request.go`
+    - added strict header checks (`Content-Type`, `Content-Length`/chunked)
+    - added structured `ProblemDetails` builders with `invalidParams`
+    - refined JSON bind error mapping (`INVALID_JSON`, mandatory body handling)
+    - refined persistence error mapping (`500/503` system-failure paths)
+    - generated absolute `Location` URI when host/scheme is available
+  - `internal/sbi/processor/processor.go`
+    - replaced concrete repository dependency with narrow writer interface for better testability
+  - `internal/sbi/processor/datastore_request_test.go` (new)
+    - success test for `201 + Location + body`
+    - failure tests for `415/411/400/503/500` ProblemDetails mapping
+- Key design decisions:
+  - enforce request preconditions before JSON parsing for deterministic HTTP status behavior.
+  - keep response payload as stored request shape (`dataSub + dataNotif`) while generating server-owned `storeTransId` via `Location`.
+- Tradeoffs:
+  - V0 intentionally validates and extracts SUPI from `dataSub[*].smfDataSub.supi` only (agreed data path).
+
+### Validation
+- Commands:
+  - `go fmt ./...`
+  - `docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...`
+  - `go vet ./...`
+  - `go build ./...`
+  - `go test ./...`
+- Result summary:
+  - All commands passed (`golangci-lint: 0 issues`; `go test` passed including new processor tests).
+- Failures/Warnings (if any):
+  - First lint attempt was blocked by Docker socket sandbox permission; rerun with approved escalation succeeded.
+
+### Risks / Open Items
+- `anaSub + anaNotifications` branch of `NadrfDataStoreRecord` remains out of V0 scope.
+- `ProblemDetails` cause strings are implementation-defined; keep consistent across future handlers.
+
+### Next Round Plan
+- Implement retrieval subscription persistence and callback workflow (R04).
