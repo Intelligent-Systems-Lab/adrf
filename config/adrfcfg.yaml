@@ -1,0 +1,24 @@
+info:
+  version: 1.0.0
+  description: ADRF initial configuration
+
+configuration:
+  adrfName: ADRF
+  sbi:
+    scheme: http
+    registerIPv4: 127.0.0.1
+    bindingIPv4: 127.0.0.1
+    port: 9888
+  mongodb:
+    name: adrf
+    url: mongodb://127.0.0.1:27017
+  retrieval:
+    corrIdBatchSize: 100
+    oneIdPerFetch: true
+    snapshot:
+      enabled: true
+
+logger:
+  enable: true
+  level: info
+  reportCaller: false
