@@ -370,57 +370,50 @@ Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
 
 ---
 
-## Round R06 - 2026-03-26 16:51 (UTC+8)
+## Round R06 (Consolidated) - 2026-03-26
+
+Covers: `R06`, `R06-Followup`.
 
 ### Pre-Check (before coding)
-- Goal: Implement retrieval fetch API (`GET /data-store-records`) for single-ID path.
+- Goal: Implement single-ID RetrievalRequest and align logging to low-noise demo operation.
 - Scope (in):
-  - support `fetch-correlation-ids` query for one correlation ID per request
-  - map existing store record to `NadrfDataStoreRecord` response (`200`)
-  - return `204` when requested record is not found
-  - add strict query validation and problem mapping for invalid requests
-  - add unit tests for `200/204/400/503/500`
+  - `GET /data-store-records` by `fetch-correlation-ids` (one ID per request), with `200/204` behavior
+  - query validation and `ProblemDetails` mapping for invalid/timeout/system errors
+  - retrieval/store hot-path log noise reduction and identifier masking
 - Scope (out):
   - multi-ID fetch response aggregation
   - `store-trans-id` and `data-set-id` retrieval branches
-  - delete APIs and unsubscribe APIs
+  - unsubscribe API implementation
 - Required docs re-read:
-  - docs/contract/adrf1.md (fetch one-ID behavior and 204 handling)
-  - docs/contract/adrf2.md (R06 fetch flow)
-  - docs/spec/TS29575_Nadrf_DataManagement.yaml (`GET /data-store-records`, query parameters, 200/204 responses)
-  - docs/impl/adrf-free5gc-alignment-guide.md (style and error/logging expectations)
+  - docs/contract/adrf1.md
+  - docs/contract/adrf2.md
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml
+  - docs/impl/adrf-free5gc-alignment-guide.md
 - Constraints confirmed:
   - free5gc-style logger usage
   - English maintainer-facing comments
   - validation command set
 
 ### Implementation
-- Files changed:
-  - `internal/sbi/processor/processor.go`
-    - wired `HandleGetDataStoreRecords` to concrete fetch handler.
-    - extended store interface with fetch-by-storeTransID method.
-  - `internal/sbi/processor/datastore_retrieval_request.go` (new)
-    - implemented `GET /data-store-records` handler.
-    - added query validation for ADRF V0 fetch mode:
-      - exactly one retrieval key
-      - fetch-correlation-ids only
-      - exactly one fetch correlation ID
-    - mapped `mongo.ErrNoDocuments` to `204 No Content`.
-    - mapped timeout/cancel/internal failures to `ProblemDetails`.
-    - converted persisted BSON payload back to response JSON payload.
-  - `internal/store/datastore_fetch_query.go` (new)
-    - added Mongo lookup by `storeTransId` for retrieval fetch path.
-  - `internal/sbi/processor/datastore_request_test.go`
-    - extended repository stub to support fetch method.
-  - `internal/sbi/processor/datastore_retrieval_request_test.go` (new)
-    - added coverage for `200/204/400/503/500` cases.
+- Aggregated file changes:
+  - Implemented RetrievalRequest single-ID data path:
+    - `internal/sbi/processor/datastore_retrieval_request.go` (new)
+    - `internal/store/datastore_fetch_query.go` (new)
+    - `internal/sbi/processor/processor.go` (wired GET handler)
+    - `internal/sbi/processor/datastore_retrieval_request_test.go` (new)
+    - `internal/sbi/processor/datastore_request_test.go` (stub extension)
+  - Implemented logging-noise convergence for demo/testbed:
+    - `internal/sbi/processor/logging_helpers.go` (new masked-ID helper)
+    - downgraded high-frequency success logs to debug in store/retrieval hot paths
+    - kept warning/error visibility and subscription lifecycle info logs
+    - updated process policy in `docs/process/implementation-protocol.md`
 - Key design decisions:
-  - treat fetch correlation ID as direct `storeTransId` lookup key.
-  - keep R06 single-ID behavior strict to match agreed NWDAF one-by-one fetch path.
-  - treat `mongo.ErrNoDocuments` as normal no-data signal (204), not error.
+  - treat `fetch-correlation-id` as direct `storeTransId` lookup key.
+  - map `mongo.ErrNoDocuments` to `204 No Content`.
+  - do not print full payload contents in hot-path logs.
 - Tradeoffs:
-  - `store-trans-id` and `data-set-id` retrieval branches are deferred until later scope.
-  - query validation currently returns `MANDATORY_IE_MISSING` cause for unsupported/mixed query shapes in V0.
+  - retrieval still supports one fetch ID per request only (by V0 design).
+  - deep per-request tracing requires temporary debug log level.
 
 ### Validation
 - Commands:
@@ -432,51 +425,61 @@ Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
 - Result summary:
   - All commands passed (`golangci-lint: 0 issues`; processor/store tests green).
 - Failures/Warnings (if any):
-  - first docker-lint attempt failed due sandbox docker-socket permission; rerun with approved escalation succeeded.
+  - docker-lint required rerun with approved docker-socket escalation in sandbox.
 
 ### Risks / Open Items
-- Retrieval fetch currently supports only one `fetch-correlation-id` per request by design.
-- `store-trans-id` and `data-set-id` query modes remain unimplemented in ADRF V0.
+- `store-trans-id` and `data-set-id` query modes remain out of V0 scope.
+- process-local state model still requires future persistence design.
 
 ### Next Round Plan
-- Implement `DELETE /data-retrieval-subscriptions/{subscriptionId}` with state cleanup and `204` behavior (R07).
+- Implement `DELETE /data-retrieval-subscriptions/{subscriptionId}` with state cleanup and in-flight dispatch cancellation (R07).
 
 ---
 
-## Round R06-Followup - 2026-03-26 17:04 (UTC+8)
+## Round R07 - 2026-03-26 17:28 (UTC+8)
 
 ### Pre-Check (before coding)
-- Goal: Tune ADRF logging for low-noise demo operation while keeping maintainability.
+- Goal: Implement `DELETE /data-retrieval-subscriptions/{subscriptionId}` with deterministic cleanup behavior.
 - Scope (in):
-  - reduce high-frequency success-path logs from `info` to `debug`
-  - keep failures and state transitions visible at `warn/error`/selected `info`
-  - document logging policy in process protocol
+  - return `204 No Content` on successful unsubscribe cleanup
+  - remove retrieval subscription state from ADRF in-memory store
+  - cancel in-flight retrieval notify dispatch for the subscription
+  - add unit tests for delete success, already-removed id, and invalid path id
 - Scope (out):
-  - API behavior changes
-  - retrieval/store schema changes
+  - persistent subscription storage
+  - retry queue persistence for callback dispatch
+- Required docs re-read:
+  - docs/contract/adrf1.md (RetrievalUnsubscribe behavior, V0 idempotent cleanup policy)
+  - docs/contract/adrf2.md (unsubscribe step in retrain flow)
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml (`DELETE /data-retrieval-subscriptions/{subscriptionId}`)
+  - docs/impl/adrf-free5gc-alignment-guide.md (logging and response style)
+- Constraints confirmed:
+  - free5gc-style logger usage
+  - English maintainer-facing comments
+  - validation command set
 
 ### Implementation
 - Files changed:
-  - `internal/sbi/processor/datastore_request.go`
-    - downgraded hot-path success logs to debug and masked identifiers.
-  - `internal/sbi/processor/datastore_retrieval_request.go`
-    - downgraded per-fetch `200/204` logs to debug and masked fetch IDs in logs.
-  - `internal/sbi/processor/retrieval_notification_sender.go`
-    - downgraded per-batch callback success logs to debug; kept subscription-level lifecycle in info.
-    - masked subscription/correlation identifiers in info/error logs.
+  - `internal/sbi/processor/retrieval_subscription_delete.go` (new)
+    - implemented delete handler returning `204` and performing runtime cleanup.
+  - `internal/sbi/processor/processor.go`
+    - wired `HandleDeleteDataRetrievalSubscription` to concrete delete handler.
+  - `internal/sbi/processor/retrieval_subscription_state.go`
+    - extended state with dispatch cancellation handles.
+    - added delete helper for removing subscription state atomically.
   - `internal/sbi/processor/retrieval_subscription_request.go`
-    - masked identifiers in retrieval-subscription creation info log.
-  - `internal/sbi/processor/logging_helpers.go` (new)
-    - added identifier summarization helper for operational logs.
-  - `internal/store/datastore_repository.go`
-    - downgraded per-record insert success log to debug.
-  - `docs/process/implementation-protocol.md`
-    - added mandatory low-noise logging requirements for demo/testbed operation.
+    - created per-subscription dispatch context/cancel function and stored in state.
+    - dispatch goroutine now uses subscription-scoped context.
+  - `internal/sbi/processor/retrieval_notification_sender.go`
+    - dispatch now accepts caller-provided context.
+    - mapped `context.Canceled` to cancellation log path instead of error failure.
+  - `internal/sbi/processor/retrieval_subscription_delete_test.go` (new)
+    - added tests for delete success (`204` + state removal + cancel invoked), delete no-op (`204`), and empty id validation.
 - Key design decisions:
-  - never log full retrieval payload content in hot paths.
-  - keep info-level logs for low-frequency transitions; move high-frequency success telemetry to debug.
+  - ADRF V0 delete path is idempotent from consumer perspective (`204` even when already removed).
+  - in-flight callback sending is controlled by subscription-scoped cancel function.
 - Tradeoffs:
-  - info-level visibility of per-record success events is intentionally reduced; deep tracing now requires debug level.
+  - cancellation is in-memory only; cross-restart dispatch persistence is still out of scope.
 
 ### Validation
 - Commands:
@@ -486,12 +489,14 @@ Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
   - `go build ./...`
   - `go test ./...`
 - Result summary:
-  - All commands passed (`golangci-lint: 0 issues`).
+  - All commands passed (`golangci-lint: 0 issues`; processor/store tests green).
 - Failures/Warnings (if any):
-  - first docker-lint attempt failed due sandbox docker-socket permission; rerun with approved escalation succeeded.
+  - initial `go vet` reported potential context leak; fixed by moving dispatch context creation after snapshot success.
+  - initial lint reported unused `writeNotImplemented`; removed and revalidated.
 
 ### Risks / Open Items
-- If production troubleshooting requires per-request traces, operators must temporarily switch logger level to debug.
+- Subscriptions and cancellation state are still process-local only.
+- Scheduler persistence for delayed callback retry remains future work.
 
 ### Next Round Plan
-- Continue R07 unsubscribe path implementation with the same low-noise logging policy.
+- Start R08 E2E and document convergence for store -> subscribe -> notify -> fetch -> unsubscribe flow.
