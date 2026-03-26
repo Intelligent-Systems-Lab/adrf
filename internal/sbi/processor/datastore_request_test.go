@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -17,8 +18,10 @@ import (
 )
 
 type stubDataStoreRepo struct {
-	insertErr error
-	inserted  []*store.NadrfDataStoreRecordDocument
+	insertErr   error
+	inserted    []*store.NadrfDataStoreRecordDocument
+	snapshotIDs []string
+	snapshotErr error
 }
 
 func (s *stubDataStoreRepo) InsertDataStoreRecord(
@@ -30,6 +33,19 @@ func (s *stubDataStoreRepo) InsertDataStoreRecord(
 	}
 	s.inserted = append(s.inserted, doc)
 	return nil
+}
+
+func (s *stubDataStoreRepo) ListStoreTransIDsBySnapshot(
+	_ context.Context,
+	_ string,
+	_ time.Time,
+	_ time.Time,
+	_ time.Time,
+) ([]string, error) {
+	if s.snapshotErr != nil {
+		return nil, s.snapshotErr
+	}
+	return append([]string(nil), s.snapshotIDs...), nil
 }
 
 func TestCreateDataStoreRecordSuccess(t *testing.T) {
