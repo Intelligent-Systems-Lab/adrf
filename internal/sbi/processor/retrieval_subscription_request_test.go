@@ -3,23 +3,59 @@ package processor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/free5gc/adrf/pkg/factory"
 )
 
+type stubRetrievalNotifier struct {
+	requests chan retrievalNotifyRequest
+	err      error
+}
+
+const retrievalTestNotifCorrID = "retrain-job-001"
+
+func (s *stubRetrievalNotifier) SendFetchInstructions(
+	_ context.Context,
+	req retrievalNotifyRequest,
+) error {
+	if s.requests != nil {
+		select {
+		case s.requests <- req:
+		default:
+		}
+	}
+	return s.err
+}
+
 func TestCreateDataRetrievalSubscriptionSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+
+	originalConfig := factory.AdrfConfig
+	factory.AdrfConfig = &factory.Config{
+		Configuration: &factory.Configuration{
+			Retrieval: &factory.Retrieval{
+				CorrIDBatchSize: 2,
+			},
+		},
+	}
+	t.Cleanup(func() {
+		factory.AdrfConfig = originalConfig
+	})
 
 	repo := &stubDataStoreRepo{
 		snapshotIDs: []string{"st-001", "st-002", "st-003"},
 	}
 	processor := NewProcessor(repo)
+	notifier := &stubRetrievalNotifier{requests: make(chan retrievalNotifyRequest, 1)}
+	processor.retrievalNotifier = notifier
 	router := newRetrievalSubscriptionRouter(processor)
 
 	response := performRetrievalSubscriptionRequest(router, validRetrievalSubscriptionPayload(), func(req *http.Request) {
@@ -56,8 +92,26 @@ func TestCreateDataRetrievalSubscriptionSuccess(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response body: %v", err)
 	}
-	if body.NotifCorrID != "retrain-job-001" {
+	if body.NotifCorrID != retrievalTestNotifCorrID {
 		t.Fatalf("unexpected notifCorrId: %s", body.NotifCorrID)
+	}
+
+	select {
+	case notifyReq := <-notifier.requests:
+		if notifyReq.NotificationURI != "http://nwdaf.local/adrf/retrieval-notify" {
+			t.Fatalf("unexpected callback URI: %s", notifyReq.NotificationURI)
+		}
+		if notifyReq.NotifCorrID != retrievalTestNotifCorrID {
+			t.Fatalf("unexpected callback notifCorrId: %s", notifyReq.NotifCorrID)
+		}
+		if len(notifyReq.FetchCorrIDs) != 3 {
+			t.Fatalf("expected 3 callback fetch IDs, got %d", len(notifyReq.FetchCorrIDs))
+		}
+		if notifyReq.CorrIDBatchSize != 2 {
+			t.Fatalf("expected corrIdBatchSize=2 from config, got %d", notifyReq.CorrIDBatchSize)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("expected callback dispatch to be triggered")
 	}
 }
 
@@ -65,7 +119,9 @@ func TestCreateDataRetrievalSubscriptionRejectWhenConsTrigNotifFalse(t *testing.
 	gin.SetMode(gin.TestMode)
 
 	repo := &stubDataStoreRepo{}
-	router := newRetrievalSubscriptionRouter(NewProcessor(repo))
+	processor := NewProcessor(repo)
+	processor.retrievalNotifier = &stubRetrievalNotifier{}
+	router := newRetrievalSubscriptionRouter(processor)
 
 	response := performRetrievalSubscriptionRequest(router, retrievalPayloadWithConsTrigFalse(), nil)
 
@@ -79,7 +135,9 @@ func TestCreateDataRetrievalSubscriptionRejectInvalidWindow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := &stubDataStoreRepo{}
-	router := newRetrievalSubscriptionRouter(NewProcessor(repo))
+	processor := NewProcessor(repo)
+	processor.retrievalNotifier = &stubRetrievalNotifier{}
+	router := newRetrievalSubscriptionRouter(processor)
 
 	response := performRetrievalSubscriptionRequest(router, retrievalPayloadWithInvalidWindow(), nil)
 
@@ -90,7 +148,9 @@ func TestCreateDataRetrievalSubscriptionMapSnapshotTimeout(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := &stubDataStoreRepo{snapshotErr: context.DeadlineExceeded}
-	router := newRetrievalSubscriptionRouter(NewProcessor(repo))
+	processor := NewProcessor(repo)
+	processor.retrievalNotifier = &stubRetrievalNotifier{}
+	router := newRetrievalSubscriptionRouter(processor)
 
 	response := performRetrievalSubscriptionRequest(router, validRetrievalSubscriptionPayload(), nil)
 
@@ -101,7 +161,9 @@ func TestCreateDataRetrievalSubscriptionRejectInvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repo := &stubDataStoreRepo{}
-	router := newRetrievalSubscriptionRouter(NewProcessor(repo))
+	processor := NewProcessor(repo)
+	processor.retrievalNotifier = &stubRetrievalNotifier{}
+	router := newRetrievalSubscriptionRouter(processor)
 
 	response := performRetrievalSubscriptionRequest(router, "{", nil)
 
@@ -139,8 +201,8 @@ func performRetrievalSubscriptionRequest(
 }
 
 func validRetrievalSubscriptionPayload() string {
-	return `{
-  "notifCorrId": "retrain-job-001",
+	return fmt.Sprintf(`{
+  "notifCorrId": "%s",
   "notificationURI": "http://nwdaf.local/adrf/retrieval-notify",
   "timePeriod": {
     "startTime": "2026-03-26T09:00:00Z",
@@ -152,7 +214,7 @@ func validRetrievalSubscriptionPayload() string {
     }
   },
   "consTrigNotif": true
-}`
+}`, retrievalTestNotifCorrID)
 }
 
 func retrievalPayloadWithConsTrigFalse() string {
