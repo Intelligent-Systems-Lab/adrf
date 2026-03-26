@@ -224,3 +224,77 @@ Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
 
 ### Next Round Plan
 - Implement retrieval subscription persistence and callback workflow (R04).
+
+---
+
+## Round R04 - 2026-03-26 16:16 (UTC+8)
+
+### Pre-Check (before coding)
+- Goal: Implement `POST /data-retrieval-subscriptions` with snapshot freeze and fetch correlation ID generation.
+- Scope (in):
+  - create retrieval subscription handler (`201 + Location + body`)
+  - apply snapshot freeze rule (`supi + timePeriod + ingestedAt <= T_sub`)
+  - generate and store `fetchCorrIds` for follow-up callback rounds
+  - add unit tests for handler and time-window filter logic
+- Scope (out):
+  - callback delivery (`RetrievalNotify`) execution
+  - fetch GET API and unsubscribe API
+- Required docs re-read:
+  - docs/contract/adrf1.md (snapshot semantics and retrieval request shape)
+  - docs/contract/adrf2.md (flow decomposition and expected behavior)
+  - docs/impl/adrf-free5gc-alignment-guide.md (response/error style and logging expectations)
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml (`/data-retrieval-subscriptions` and schema requirements)
+- Constraints confirmed:
+  - free5gc-style logger usage
+  - English maintainer-facing comments
+  - validation command set
+
+### Implementation
+- Files changed:
+  - `internal/sbi/processor/processor.go`
+    - extended repository interface with snapshot query contract
+    - added in-process retrieval subscription state map
+    - wired `HandleCreateDataRetrievalSubscription` to concrete implementation
+  - `internal/sbi/processor/retrieval_subscription_request.go` (new)
+    - implemented create-retrieval-subscription request parsing/validation
+    - implemented strict `ProblemDetails` errors for request and snapshot failures
+    - implemented snapshot cutoff capture (`T_sub`) and repository snapshot query call
+    - generated `subscriptionId`, set `Location`, and returned `201 + body`
+  - `internal/sbi/processor/retrieval_subscription_state.go` (new)
+    - added runtime state structure for `subscriptionId -> snapshot/fetchCorrIds`
+  - `internal/store/datastore_snapshot_query.go` (new)
+    - implemented Mongo snapshot candidate query by `supi` + `ingestedAt <= T_sub`
+    - added `notificationItems[*].startTime` window filter over `dataNotif.upfEventNotifs`
+    - returned deterministic ordered `storeTransId` list as `fetchCorrIds`
+  - `internal/sbi/processor/retrieval_subscription_request_test.go` (new)
+    - added success and error tests for create-retrieval-subscription handler
+  - `internal/store/datastore_snapshot_query_test.go` (new)
+    - added unit tests for startTime window matching across timestamp encodings
+  - `internal/sbi/processor/datastore_request_test.go`
+    - updated stub repository to satisfy extended processor interface
+- Key design decisions:
+  - keep retrieval snapshot filtering deterministic by freezing `T_sub` once at subscription creation.
+  - keep fetch correlation IDs equal to `storeTransId` (no transformation/prefixing).
+  - persist retrieval runtime state in-process for immediate use in R05 callback delivery.
+- Tradeoffs:
+  - snapshot time-window filtering is currently performed in ADRF application logic after indexed Mongo pre-filtering.
+  - V0 retrieval path is intentionally restricted to `dataSub.smfDataSub.supi` + `consTrigNotif=true`.
+
+### Validation
+- Commands:
+  - `go fmt ./...`
+  - `docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...`
+  - `go vet ./...`
+  - `go build ./...`
+  - `go test ./...`
+- Result summary:
+  - All commands passed (`golangci-lint: 0 issues`; processor/store tests green).
+- Failures/Warnings (if any):
+  - Initial lint run reported `errcheck/shadow/lll` issues; fixed in-round and revalidated.
+
+### Risks / Open Items
+- Retrieval subscription state is currently process-local and not yet persisted across ADRF restarts.
+- Callback batching and termination notification are pending R05.
+
+### Next Round Plan
+- Implement RetrievalNotify callback sender with `corrIdBatchSize` chunking and `terminationReq=true` on the last batch (R05).
