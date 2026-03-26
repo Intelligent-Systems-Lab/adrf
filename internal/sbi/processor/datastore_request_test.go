@@ -22,6 +22,8 @@ type stubDataStoreRepo struct {
 	inserted    []*store.NadrfDataStoreRecordDocument
 	snapshotIDs []string
 	snapshotErr error
+	fetchDoc    *store.NadrfDataStoreRecordDocument
+	fetchErr    error
 }
 
 func (s *stubDataStoreRepo) InsertDataStoreRecord(
@@ -46,6 +48,16 @@ func (s *stubDataStoreRepo) ListStoreTransIDsBySnapshot(
 		return nil, s.snapshotErr
 	}
 	return append([]string(nil), s.snapshotIDs...), nil
+}
+
+func (s *stubDataStoreRepo) GetDataStoreRecordByStoreTransID(
+	_ context.Context,
+	_ string,
+) (*store.NadrfDataStoreRecordDocument, error) {
+	if s.fetchErr != nil {
+		return nil, s.fetchErr
+	}
+	return s.fetchDoc, nil
 }
 
 func TestCreateDataStoreRecordSuccess(t *testing.T) {

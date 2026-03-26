@@ -32,6 +32,10 @@ type Processor struct {
 // while still allowing the concrete repository to be injected in production.
 type dataStoreRecordWriter interface {
 	InsertDataStoreRecord(ctx context.Context, doc *store.NadrfDataStoreRecordDocument) error
+	GetDataStoreRecordByStoreTransID(
+		ctx context.Context,
+		storeTransID string,
+	) (*store.NadrfDataStoreRecordDocument, error)
 	ListStoreTransIDsBySnapshot(
 		ctx context.Context,
 		supi string,
@@ -58,8 +62,7 @@ func (p *Processor) HandleCreateDataRetrievalSubscription(c *gin.Context) {
 }
 
 func (p *Processor) HandleGetDataStoreRecords(c *gin.Context) {
-	logger.ProcLog.Warn("GetDataStoreRecords is not implemented")
-	p.writeNotImplemented(c, "GET_DATA_STORE_RECORDS")
+	p.handleGetDataStoreRecords(c)
 }
 
 func (p *Processor) HandleDeleteDataRetrievalSubscription(c *gin.Context) {
