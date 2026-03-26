@@ -33,7 +33,14 @@ A round is not considered complete unless all items above are recorded.
    - snapshot filtering
    - error mapping
    - retry/termination behavior
-4. Keep API behavior aligned with agreed ADRF V0 contract.
+4. Comments must be maintainer-facing:
+   - Do reference external standards/specs when relevant (e.g., 3GPP behavior rationale).
+   - Do **not** reference internal round labels, internal process docs, or team-only planning context.
+5. Logging must be both free5gc-style and operationally informative:
+   - Keep category-based logger usage (`Init`, `SBI`, `Proc`, `Store`, etc.).
+   - Add enough logs at important state transitions so maintainers can trace key actions and failures.
+   - Avoid logs that are too sparse to explain what critical step is running or what failed.
+6. Keep API behavior aligned with agreed ADRF V0 contract.
 
 ## 5. Standard Validation Commands
 
