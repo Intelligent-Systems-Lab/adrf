@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -196,6 +197,7 @@ func buildDataStoreRecordsFetchURI(c *gin.Context) string {
 }
 
 func (p *Processor) dispatchRetrievalFetchNotifications(
+	dispatchCtx context.Context,
 	state *retrievalSubscriptionState,
 	fetchURI string,
 ) {
@@ -226,7 +228,16 @@ func (p *Processor) dispatchRetrievalFetchNotifications(
 		len(notifyReq.FetchCorrIDs),
 	)
 
-	if err := p.retrievalNotifier.SendFetchInstructions(context.Background(), notifyReq); err != nil {
+	if err := p.retrievalNotifier.SendFetchInstructions(dispatchCtx, notifyReq); err != nil {
+		if errors.Is(err, context.Canceled) {
+			logger.ProcLog.Infof(
+				"RetrievalNotify dispatch canceled: subscriptionId=%s notifCorrId=%s",
+				summarizeIdentifier(state.SubscriptionID),
+				summarizeIdentifier(state.NotifCorrID),
+			)
+			return
+		}
+
 		logger.ProcLog.Errorf(
 			"RetrievalNotify dispatch failed: subscriptionId=%s notifCorrId=%s err=%v",
 			summarizeIdentifier(state.SubscriptionID),

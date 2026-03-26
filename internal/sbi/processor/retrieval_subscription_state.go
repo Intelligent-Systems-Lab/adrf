@@ -1,6 +1,9 @@
 package processor
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // retrievalSubscriptionState stores the server-side runtime state of one
 // retrieval subscription.
@@ -21,6 +24,9 @@ type retrievalSubscriptionState struct {
 
 	ConsTrigNotif bool
 	FetchCorrIDs  []string
+
+	DispatchCtx    context.Context
+	DispatchCancel context.CancelFunc
 }
 
 func (p *Processor) storeRetrievalSubscriptionState(state *retrievalSubscriptionState) {
@@ -39,4 +45,16 @@ func (p *Processor) getRetrievalSubscriptionState(subscriptionID string) (*retri
 
 	state, ok := p.retrievalSubs[subscriptionID]
 	return state, ok
+}
+
+func (p *Processor) deleteRetrievalSubscriptionState(subscriptionID string) (*retrievalSubscriptionState, bool) {
+	p.retrievalSubMu.Lock()
+	defer p.retrievalSubMu.Unlock()
+
+	state, ok := p.retrievalSubs[subscriptionID]
+	if !ok {
+		return nil, false
+	}
+	delete(p.retrievalSubs, subscriptionID)
+	return state, true
 }

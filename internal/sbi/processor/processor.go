@@ -2,15 +2,12 @@ package processor
 
 import (
 	"context"
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/free5gc/adrf/internal/logger"
 	"github.com/free5gc/adrf/internal/store"
-	"github.com/free5gc/openapi/models"
 )
 
 // Processor owns ADRF business behavior behind SBI handlers.
@@ -66,14 +63,5 @@ func (p *Processor) HandleGetDataStoreRecords(c *gin.Context) {
 }
 
 func (p *Processor) HandleDeleteDataRetrievalSubscription(c *gin.Context) {
-	logger.ProcLog.Warn("DeleteDataRetrievalSubscription is not implemented")
-	p.writeNotImplemented(c, "DELETE_DATA_RETRIEVAL_SUBSCRIPTION")
-}
-
-func (p *Processor) writeNotImplemented(c *gin.Context, cause string) {
-	c.JSON(http.StatusNotImplemented, models.ProblemDetails{
-		Status: http.StatusNotImplemented,
-		Cause:  cause,
-		Detail: "The requested ADRF operation is not implemented in this build.",
-	})
+	p.handleDeleteDataRetrievalSubscription(c)
 }

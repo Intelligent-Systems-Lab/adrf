@@ -124,6 +124,7 @@ func (p *Processor) handleCreateDataRetrievalSubscription(c *gin.Context) {
 		return
 	}
 
+	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
 	subscriptionID := uuid.NewString()
 	state := &retrievalSubscriptionState{
 		SubscriptionID:  subscriptionID,
@@ -136,6 +137,8 @@ func (p *Processor) handleCreateDataRetrievalSubscription(c *gin.Context) {
 		CreatedAt:       snapshotAt,
 		ConsTrigNotif:   req.ConsTrigNotif != nil && *req.ConsTrigNotif,
 		FetchCorrIDs:    append([]string(nil), fetchCorrIDs...),
+		DispatchCtx:     dispatchCtx,
+		DispatchCancel:  dispatchCancel,
 	}
 	p.storeRetrievalSubscriptionState(state)
 
@@ -156,7 +159,7 @@ func (p *Processor) handleCreateDataRetrievalSubscription(c *gin.Context) {
 	// is already created and stored, and callback retries/compensation can be
 	// handled independently from this synchronous request lifecycle.
 	fetchURI := buildDataStoreRecordsFetchURI(c)
-	go p.dispatchRetrievalFetchNotifications(state, fetchURI)
+	go p.dispatchRetrievalFetchNotifications(dispatchCtx, state, fetchURI)
 }
 
 func validateDataRetrievalSubscriptionPayload(req *retrievalSubscriptionPayload) *models.ProblemDetails {
