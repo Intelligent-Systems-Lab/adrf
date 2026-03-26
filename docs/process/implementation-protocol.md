@@ -44,6 +44,11 @@ A round is not considered complete unless all items above are recorded.
    - Keep category-based logger usage (`Init`, `SBI`, `Proc`, `Store`, etc.).
    - Add enough logs at important state transitions so maintainers can trace key actions and failures.
    - Avoid logs that are too sparse to explain what critical step is running or what failed.
+   - For testbed/demo default operation (`logger.level: info`), high-frequency success-path logs must be downgraded to `debug` to avoid log flooding.
+   - Keep `info` for lifecycle and low-frequency state transitions (bootstrap, subscription create/complete, shutdown, etc.).
+   - Keep `warn/error` for validation failures, dependency failures, callback failures, and unexpected paths.
+   - Never dump full data payloads (`dataSub`, `dataNotif`, notification item arrays) in logs on hot paths.
+   - When logging correlation IDs / subscription IDs / SUPI in `info` or above, prefer masked/shortened forms.
 6. Keep API behavior aligned with agreed ADRF V0 contract.
 
 ## 5. Standard Validation Commands

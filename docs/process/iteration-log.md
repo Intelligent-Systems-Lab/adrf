@@ -367,3 +367,131 @@ Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
 
 ### Next Round Plan
 - Implement `GET /data-store-records` fetch path (single `fetch-correlation-ids` first, 200/204 behavior) for R06.
+
+---
+
+## Round R06 - 2026-03-26 16:51 (UTC+8)
+
+### Pre-Check (before coding)
+- Goal: Implement retrieval fetch API (`GET /data-store-records`) for single-ID path.
+- Scope (in):
+  - support `fetch-correlation-ids` query for one correlation ID per request
+  - map existing store record to `NadrfDataStoreRecord` response (`200`)
+  - return `204` when requested record is not found
+  - add strict query validation and problem mapping for invalid requests
+  - add unit tests for `200/204/400/503/500`
+- Scope (out):
+  - multi-ID fetch response aggregation
+  - `store-trans-id` and `data-set-id` retrieval branches
+  - delete APIs and unsubscribe APIs
+- Required docs re-read:
+  - docs/contract/adrf1.md (fetch one-ID behavior and 204 handling)
+  - docs/contract/adrf2.md (R06 fetch flow)
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml (`GET /data-store-records`, query parameters, 200/204 responses)
+  - docs/impl/adrf-free5gc-alignment-guide.md (style and error/logging expectations)
+- Constraints confirmed:
+  - free5gc-style logger usage
+  - English maintainer-facing comments
+  - validation command set
+
+### Implementation
+- Files changed:
+  - `internal/sbi/processor/processor.go`
+    - wired `HandleGetDataStoreRecords` to concrete fetch handler.
+    - extended store interface with fetch-by-storeTransID method.
+  - `internal/sbi/processor/datastore_retrieval_request.go` (new)
+    - implemented `GET /data-store-records` handler.
+    - added query validation for ADRF V0 fetch mode:
+      - exactly one retrieval key
+      - fetch-correlation-ids only
+      - exactly one fetch correlation ID
+    - mapped `mongo.ErrNoDocuments` to `204 No Content`.
+    - mapped timeout/cancel/internal failures to `ProblemDetails`.
+    - converted persisted BSON payload back to response JSON payload.
+  - `internal/store/datastore_fetch_query.go` (new)
+    - added Mongo lookup by `storeTransId` for retrieval fetch path.
+  - `internal/sbi/processor/datastore_request_test.go`
+    - extended repository stub to support fetch method.
+  - `internal/sbi/processor/datastore_retrieval_request_test.go` (new)
+    - added coverage for `200/204/400/503/500` cases.
+- Key design decisions:
+  - treat fetch correlation ID as direct `storeTransId` lookup key.
+  - keep R06 single-ID behavior strict to match agreed NWDAF one-by-one fetch path.
+  - treat `mongo.ErrNoDocuments` as normal no-data signal (204), not error.
+- Tradeoffs:
+  - `store-trans-id` and `data-set-id` retrieval branches are deferred until later scope.
+  - query validation currently returns `MANDATORY_IE_MISSING` cause for unsupported/mixed query shapes in V0.
+
+### Validation
+- Commands:
+  - `go fmt ./...`
+  - `docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...`
+  - `go vet ./...`
+  - `go build ./...`
+  - `go test ./...`
+- Result summary:
+  - All commands passed (`golangci-lint: 0 issues`; processor/store tests green).
+- Failures/Warnings (if any):
+  - first docker-lint attempt failed due sandbox docker-socket permission; rerun with approved escalation succeeded.
+
+### Risks / Open Items
+- Retrieval fetch currently supports only one `fetch-correlation-id` per request by design.
+- `store-trans-id` and `data-set-id` query modes remain unimplemented in ADRF V0.
+
+### Next Round Plan
+- Implement `DELETE /data-retrieval-subscriptions/{subscriptionId}` with state cleanup and `204` behavior (R07).
+
+---
+
+## Round R06-Followup - 2026-03-26 17:04 (UTC+8)
+
+### Pre-Check (before coding)
+- Goal: Tune ADRF logging for low-noise demo operation while keeping maintainability.
+- Scope (in):
+  - reduce high-frequency success-path logs from `info` to `debug`
+  - keep failures and state transitions visible at `warn/error`/selected `info`
+  - document logging policy in process protocol
+- Scope (out):
+  - API behavior changes
+  - retrieval/store schema changes
+
+### Implementation
+- Files changed:
+  - `internal/sbi/processor/datastore_request.go`
+    - downgraded hot-path success logs to debug and masked identifiers.
+  - `internal/sbi/processor/datastore_retrieval_request.go`
+    - downgraded per-fetch `200/204` logs to debug and masked fetch IDs in logs.
+  - `internal/sbi/processor/retrieval_notification_sender.go`
+    - downgraded per-batch callback success logs to debug; kept subscription-level lifecycle in info.
+    - masked subscription/correlation identifiers in info/error logs.
+  - `internal/sbi/processor/retrieval_subscription_request.go`
+    - masked identifiers in retrieval-subscription creation info log.
+  - `internal/sbi/processor/logging_helpers.go` (new)
+    - added identifier summarization helper for operational logs.
+  - `internal/store/datastore_repository.go`
+    - downgraded per-record insert success log to debug.
+  - `docs/process/implementation-protocol.md`
+    - added mandatory low-noise logging requirements for demo/testbed operation.
+- Key design decisions:
+  - never log full retrieval payload content in hot paths.
+  - keep info-level logs for low-frequency transitions; move high-frequency success telemetry to debug.
+- Tradeoffs:
+  - info-level visibility of per-record success events is intentionally reduced; deep tracing now requires debug level.
+
+### Validation
+- Commands:
+  - `go fmt ./...`
+  - `docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...`
+  - `go vet ./...`
+  - `go build ./...`
+  - `go test ./...`
+- Result summary:
+  - All commands passed (`golangci-lint: 0 issues`).
+- Failures/Warnings (if any):
+  - first docker-lint attempt failed due sandbox docker-socket permission; rerun with approved escalation succeeded.
+
+### Risks / Open Items
+- If production troubleshooting requires per-request traces, operators must temporarily switch logger level to debug.
+
+### Next Round Plan
+- Continue R07 unsubscribe path implementation with the same low-noise logging policy.
