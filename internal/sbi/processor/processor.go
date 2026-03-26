@@ -22,6 +22,8 @@ type Processor struct {
 
 	retrievalSubMu sync.RWMutex
 	retrievalSubs  map[string]*retrievalSubscriptionState
+
+	retrievalNotifier retrievalNotificationSender
 }
 
 // dataStoreRecordWriter is the persistence dependency needed by the store API.
@@ -41,8 +43,9 @@ type dataStoreRecordWriter interface {
 
 func NewProcessor(dataStoreRepo dataStoreRecordWriter) *Processor {
 	return &Processor{
-		dataStoreRepo: dataStoreRepo,
-		retrievalSubs: make(map[string]*retrievalSubscriptionState),
+		dataStoreRepo:     dataStoreRepo,
+		retrievalSubs:     make(map[string]*retrievalSubscriptionState),
+		retrievalNotifier: newHTTPRetrievalNotificationSender(),
 	}
 }
 

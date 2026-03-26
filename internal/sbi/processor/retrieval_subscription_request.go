@@ -151,6 +151,12 @@ func (p *Processor) handleCreateDataRetrievalSubscription(c *gin.Context) {
 		len(fetchCorrIDs),
 	)
 	c.JSON(http.StatusCreated, req)
+
+	// Callback delivery is decoupled from API response latency. The subscription
+	// is already created and stored, and callback retries/compensation can be
+	// handled independently from this synchronous request lifecycle.
+	fetchURI := buildDataStoreRecordsFetchURI(c)
+	go p.dispatchRetrievalFetchNotifications(state, fetchURI)
 }
 
 func validateDataRetrievalSubscriptionPayload(req *retrievalSubscriptionPayload) *models.ProblemDetails {
