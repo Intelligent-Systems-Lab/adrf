@@ -116,9 +116,9 @@ func (s *httpRetrievalNotificationSender) SendFetchInstructions(
 			)
 		}
 
-		logger.ProcLog.Infof(
+		logger.ProcLog.Debugf(
 			"RetrievalNotify callback sent: notifCorrId=%s batch=%d/%d corrIds=%d terminationReq=%t status=%d",
-			req.NotifCorrID,
+			summarizeIdentifier(req.NotifCorrID),
 			batchIdx+1,
 			len(batches),
 			len(batch.FetchCorrIDs),
@@ -220,8 +220,8 @@ func (p *Processor) dispatchRetrievalFetchNotifications(
 
 	logger.ProcLog.Infof(
 		"RetrievalNotify dispatch started: subscriptionId=%s notifCorrId=%s batchesBy=%d corrIds=%d",
-		state.SubscriptionID,
-		state.NotifCorrID,
+		summarizeIdentifier(state.SubscriptionID),
+		summarizeIdentifier(state.NotifCorrID),
 		notifyReq.CorrIDBatchSize,
 		len(notifyReq.FetchCorrIDs),
 	)
@@ -229,8 +229,8 @@ func (p *Processor) dispatchRetrievalFetchNotifications(
 	if err := p.retrievalNotifier.SendFetchInstructions(context.Background(), notifyReq); err != nil {
 		logger.ProcLog.Errorf(
 			"RetrievalNotify dispatch failed: subscriptionId=%s notifCorrId=%s err=%v",
-			state.SubscriptionID,
-			state.NotifCorrID,
+			summarizeIdentifier(state.SubscriptionID),
+			summarizeIdentifier(state.NotifCorrID),
 			err,
 		)
 		return
@@ -238,7 +238,7 @@ func (p *Processor) dispatchRetrievalFetchNotifications(
 
 	logger.ProcLog.Infof(
 		"RetrievalNotify dispatch completed: subscriptionId=%s notifCorrId=%s",
-		state.SubscriptionID,
-		state.NotifCorrID,
+		summarizeIdentifier(state.SubscriptionID),
+		summarizeIdentifier(state.NotifCorrID),
 	)
 }

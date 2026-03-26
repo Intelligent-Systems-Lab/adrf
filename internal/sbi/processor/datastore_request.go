@@ -73,7 +73,7 @@ func (p *Processor) handleCreateDataStoreRecord(c *gin.Context) {
 		p.writeProblem(c, problem)
 		return
 	}
-	logger.ProcLog.Infof("StorageRequest accepted: dataSubCount=%d", len(req.DataSub))
+	logger.ProcLog.Debugf("StorageRequest accepted: dataSubCount=%d", len(req.DataSub))
 
 	if problem := validateDataStoreRecordPayload(&req); problem != nil {
 		logger.ProcLog.Warnf(
@@ -99,7 +99,7 @@ func (p *Processor) handleCreateDataStoreRecord(c *gin.Context) {
 		))
 		return
 	}
-	logger.ProcLog.Infof("StorageRequest SUPI resolved: %s", supi)
+	logger.ProcLog.Debugf("StorageRequest SUPI resolved: %s", summarizeIdentifier(supi))
 
 	// IngestedAt is assigned at ADRF accept time so retrieval queries can apply
 	// deterministic snapshot boundaries independently from notification timestamps.
@@ -123,10 +123,10 @@ func (p *Processor) handleCreateDataStoreRecord(c *gin.Context) {
 	location := buildDataStoreRecordLocation(c, doc.StoreTransID)
 	c.Header("Location", location)
 
-	logger.StoreLog.Infof(
+	logger.StoreLog.Debugf(
 		"StorageRequest completed: storeTransId=%s supi=%s location=%s",
-		doc.StoreTransID,
-		doc.Supi,
+		summarizeIdentifier(doc.StoreTransID),
+		summarizeIdentifier(doc.Supi),
 		location,
 	)
 	c.JSON(http.StatusCreated, req)

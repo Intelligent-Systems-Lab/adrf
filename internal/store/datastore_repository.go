@@ -83,7 +83,7 @@ func (r *DataStoreRepository) InsertDataStoreRecord(
 		return fmt.Errorf("failed to insert data store record: %w", err)
 	}
 
-	logger.StoreLog.Infof("Store record inserted: storeTransId=%s", doc.StoreTransID)
+	logger.StoreLog.Debugf("Store record inserted: storeTransId=%s", doc.StoreTransID)
 	return nil
 }
 

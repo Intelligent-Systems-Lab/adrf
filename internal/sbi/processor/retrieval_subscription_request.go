@@ -144,9 +144,9 @@ func (p *Processor) handleCreateDataRetrievalSubscription(c *gin.Context) {
 
 	logger.ProcLog.Infof(
 		"RetrievalSubscribe created: subscriptionId=%s notifCorrId=%s supi=%s snapshotAt=%s fetchCorrIdCount=%d",
-		subscriptionID,
-		req.NotifCorrID,
-		supi,
+		summarizeIdentifier(subscriptionID),
+		summarizeIdentifier(req.NotifCorrID),
+		summarizeIdentifier(supi),
 		snapshotAt.Format(time.RFC3339Nano),
 		len(fetchCorrIDs),
 	)
