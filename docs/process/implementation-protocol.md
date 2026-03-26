@@ -14,6 +14,10 @@ For every implementation round:
 3. Fill in a `Round Report` section after changes.
 4. Execute validation commands and record outcomes.
 5. If a command fails, record the failure and next action.
+6. Apply rolling consolidation to keep iteration logs compact:
+   - When starting round `Rx`, consolidate `R(x-1)` and its follow-ups into one summary block.
+   - The consolidated block must keep only: key decisions, aggregated file changes, validation results, and risks/open items.
+   - Keep the current in-progress round detailed; keep older rounds summarized.
 
 A round is not considered complete unless all items above are recorded.
 

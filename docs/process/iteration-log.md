@@ -1,7 +1,7 @@
 # ADRF Iteration Log
 
-This file records all ADRF implementation rounds.
-Follow the template in `implementation-protocol.md`.
+This file records ADRF implementation rounds.
+Follow `implementation-protocol.md` and apply rolling consolidation.
 
 ---
 
@@ -9,186 +9,73 @@ Follow the template in `implementation-protocol.md`.
 
 ### Pre-Check (before coding)
 - Goal: Establish mandatory implementation workflow files.
-- Scope (in): Create process documents only.
-- Scope (out): Any ADRF code change.
+- Scope (in): process docs only.
+- Scope (out): ADRF code changes.
 - Required docs re-read:
-  - docs/contract/adrf1.md (sections: overall scope)
-  - docs/impl/adrf-free5gc-alignment-guide.md (sections: coding constraints)
+  - docs/contract/adrf1.md (overall scope)
+  - docs/impl/adrf-free5gc-alignment-guide.md (constraints)
 - Constraints confirmed:
   - free5gc-style logger
-  - English comments (detailed on key logic)
+  - English comments
   - validation command set
 
 ### Implementation
 - Files changed:
-  - docs/process/implementation-protocol.md: Added mandatory round workflow and template.
-  - docs/process/iteration-log.md: Added iteration record structure and initialized R00.
+  - docs/process/implementation-protocol.md
+  - docs/process/iteration-log.md
 - Key design decisions:
-  - Use one shared protocol file plus one cumulative round log.
-  - Mark per-round Pre-Check and Round Report as mandatory.
+  - Use one protocol doc + one cumulative log.
 - Tradeoffs:
-  - Slight process overhead, but improves traceability and review speed.
+  - Slight process overhead for better traceability.
 
 ### Validation
 - Commands:
   - Not applicable (docs-only round).
 - Result summary:
-  - Process files created successfully.
+  - Process files created.
 - Failures/Warnings (if any):
   - None.
 
 ### Risks / Open Items
-- Team members must consistently follow this format every round.
+- Team discipline is required to keep this format consistent.
 
 ### Next Round Plan
-- Start ADRF V0 implementation with Round R01 using this protocol.
+- Start ADRF V0 code skeleton (R01).
 
 ---
 
-## Round R01 - 2026-03-26 19:42 (UTC+8)
+## Round R01 (Consolidated) - 2026-03-26
+
+Covers: `R01`, `R01-Followup`, `R01-Followup2`.
 
 ### Pre-Check (before coding)
-- Goal: Build ADRF project skeleton and lint/build pipeline baseline.
-- Scope (in): project structure, bootstrapping code, config, logger, SBI server stubs, golangci config.
-- Scope (out): full ADRF business logic (store/retrieval/snapshot implementation).
+- Goal: Build ADRF skeleton and align baseline style with free5gc.
+- Scope (in): project scaffold, lifecycle wiring, logger/config, SBI route skeleton, lint/style convergence.
+- Scope (out): store/retrieval business logic.
 - Required docs re-read:
-  - docs/contract/adrf1.md (sections: 0, 2, 3, 4)
-  - docs/impl/adrf-free5gc-alignment-guide.md (sections: 3, 4, 5, 8, 9)
-  - docs/spec/TS29575_Nadrf_DataManagement.yaml (resource paths and operation names)
+  - docs/contract/adrf1.md
+  - docs/impl/adrf-free5gc-alignment-guide.md
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml
 - Constraints confirmed:
-  - free5gc-style logger and structure
-  - English comments with detailed design notes
-  - validation command set (fmt, golangci-lint, vet, build, test)
+  - free5gc-style structure/logger
+  - English maintainer-facing comments
+  - validation command set
 
 ### Implementation
-- Files changed:
-  - go.mod: Initialized ADRF module and aligned core dependencies with free5gc-style stack.
-  - go.sum: Added dependency checksum lock after `go mod tidy`.
-  - .golangci.yml: Added lint baseline compatible with current `golangci-lint` version (`version: "2"`).
-  - config/adrfcfg.yaml: Added initial ADRF config template (`sbi`, `mongodb`, `retrieval`, `logger`).
-  - cmd/main.go: Added free5gc-style CLI bootstrap (`urfave/cli`, panic recovery, config/log flags, signal handling).
-  - pkg/app/app.go: Added lifecycle interface for ADRF app runtime.
-  - pkg/factory/config.go: Added config models, defaults, YAML parsing, URI constants.
-  - pkg/factory/factory.go: Added global config holder.
-  - pkg/service/init.go: Added app lifecycle wiring (context, logger settings, consumer/processor/server setup, graceful shutdown).
-  - internal/logger/logger.go: Added free5gc-pattern category logger entries.
-  - internal/context/context.go: Added singleton ADRF runtime context skeleton.
-  - internal/sbi/routes.go: Added route descriptor + route registration helper.
-  - internal/sbi/server.go: Added Gin-based SBI server skeleton and ADRF Data Management routes.
-  - internal/sbi/api_datamanagement.go: Added handler forwarding to processor.
-  - internal/sbi/processor/processor.go: Added R01 processor stubs with explicit `501 Not Implemented`.
-  - internal/sbi/consumer/consumer.go: Added outbound consumer placeholder.
+- Aggregated file changes:
+  - Initialized ADRF module skeleton (`cmd`, `config`, `pkg`, `internal`).
+  - Added app lifecycle, config parsing/defaults, SBI server skeleton, processor/consumer placeholders.
+  - Added free5gc-style logger categories and route constants.
+  - Aligned `.golangci.yml` with free5gc style.
+  - Converged naming/types:
+    - `models.ProblemDetails`
+    - `Mongodb.Url`
+    - `AdrfDataRetrievalSubscriptionsPath`
 - Key design decisions:
-  - Keep full package boundaries now (cmd/service/sbi/processor/consumer/context) to avoid structural churn in R02+.
-  - Return `501` for all data APIs in R01 to keep behavior explicit while preserving endpoint skeleton.
-  - Follow free5gc logger category pattern from day one to avoid later logging refactor.
+  - Keep full package boundaries from day one.
+  - Return `501` for not-yet-supported APIs.
 - Tradeoffs:
-  - `go mod tidy` upgraded `go` directive to `1.25.5` because `github.com/free5gc/util v1.3.1` requires it.
-  - R01 has no ADRF business logic yet; only infra skeleton and execution pipeline baseline.
-
-### Validation
-- Commands:
-  - go fmt ./...
-  - docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...
-  - go vet ./...
-  - go build ./...
-  - go test ./...
-- Result summary:
-  - All commands passed on final run.
-  - `golangci-lint` result: `0 issues`.
-  - `go test` result: all packages built successfully (`[no test files]` in R01 skeleton).
-- Failures/Warnings (if any):
-  - Initial Docker lint run failed due outdated `.golangci.yml` format; fixed by adding `version: "2"` and compatible linter list.
-  - Initial lint run then failed due missing `go.sum`; resolved by `go mod tidy`.
-  - `go mod tidy` required network and switched toolchain to `go1.25.8` automatically because module requires `go >= 1.25.5`.
-
-### Risks / Open Items
-- ADRF API behavior is still stubbed (`501`) and not yet contract-complete for store/retrieval flows.
-- Need to decide whether to keep `go 1.25.5` as baseline for team/dev CI images.
-
-### Next Round Plan
-- Implement R02 storage path: `POST /data-store-records` request validation, `storeTransId` generation, Mongo persistence skeleton, and response/Location semantics.
-
----
-
-## Round R01-Followup - 2026-03-26 19:56 (UTC+8)
-
-### Pre-Check (before coding)
-- Goal: Align ADRF `.golangci.yml` with free5gc style used by NWDAF/SMF/go-upf.
-- Scope (in): lint configuration structure and options only.
-- Scope (out): ADRF runtime code and API behavior.
-- Required docs re-read:
-  - docs/impl/adrf-free5gc-alignment-guide.md (sections: 3.4, 9.3)
-  - reference configs:
-    - 5G_Infrastructure/NWDAF/NWDAF/.golangci.yml
-    - 5G_Infrastructure/5GC/smf-nwdaf-ext/.golangci.yml
-    - 5G_Infrastructure/go-upf-ess/go-upf/.golangci.yml
-- Constraints confirmed:
-  - keep free5gc-aligned format while preserving successful lint/build pipeline
-  - keep command set unchanged
-
-### Implementation
-- Files changed:
-  - .golangci.yml: replaced minimal config with free5gc-style structured config (`run/output/linters/settings/issues/severity/formatters`) and aligned linter set.
-- Key design decisions:
-  - Use NWDAF/SMF style as baseline to keep contribution style consistent.
-  - Set `run.go: "1.25"` to match current ADRF module toolchain floor.
-- Tradeoffs:
-  - Broader linter set increases strictness, but this is preferred for long-term consistency.
-
-### Validation
-- Commands:
-  - go fmt ./...
-  - docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...
-  - go vet ./...
-  - go build ./...
-  - go test ./...
-- Result summary:
-  - All commands passed.
-  - `golangci-lint` result: `0 issues`.
-- Failures/Warnings (if any):
-  - None.
-
-### Risks / Open Items
-- None for this follow-up; change is config-only and backward-safe for existing R01 skeleton.
-
-### Next Round Plan
-- Continue with R02 business implementation without further tooling changes.
-
----
-
-## Round R01-Followup2 - 2026-03-26 20:08 (UTC+8)
-
-### Pre-Check (before coding)
-- Goal: Apply three free5gc-style convergence changes without changing ADRF behavior.
-- Scope (in):
-  - replace local problem struct with `openapi/models.ProblemDetails`
-  - rename Mongo config field from `URL` to `Url`
-  - rename path constant `AdrfDataRetrievalSubsPath` to `AdrfDataRetrievalSubscriptionsPath`
-- Scope (out): any store/retrieval business logic implementation.
-- Required docs re-read:
-  - docs/contract/adrf1.md (sections: 0, 2, 3)
-  - docs/impl/adrf-free5gc-alignment-guide.md (sections: 3.4, 5.2, 5.3)
-  - docs/process/implementation-protocol.md (sections: 2, 5, 7)
-- Constraints confirmed:
-  - free5gc-style logger and API error model alignment
-  - English comments only
-  - validation command set (fmt, golangci-lint, vet, build, test)
-
-### Implementation
-- Files changed:
-  - go.mod: added `github.com/free5gc/openapi v1.2.3` for free5gc-style `models.ProblemDetails`.
-  - go.sum: updated by `go mod tidy` after adding openapi dependency.
-  - internal/sbi/processor/processor.go: replaced local `problemDetails` struct with `models.ProblemDetails`.
-  - pkg/factory/config.go:
-    - renamed `AdrfDataRetrievalSubsPath` to `AdrfDataRetrievalSubscriptionsPath`.
-    - renamed Mongo config field from `URL` to `Url`.
-  - internal/sbi/server.go: updated route bindings to new constant name.
-- Key design decisions:
-  - Keep behavior unchanged (`501` in R01) while aligning types/naming with free5gc conventions.
-  - Follow free5gc field naming convention (`Url`) used in existing NF configs.
-- Tradeoffs:
-  - Added one direct dependency (`free5gc/openapi`) to align error model type.
+  - Upgraded module/toolchain baseline (`go 1.25.5`) due dependency requirements.
 
 ### Validation
 - Commands:
@@ -199,64 +86,64 @@ Follow the template in `implementation-protocol.md`.
   - go build ./...
   - go test ./...
 - Result summary:
-  - All commands passed.
-  - `golangci-lint` result: `0 issues`.
+  - All commands passed (`golangci-lint: 0 issues`).
 - Failures/Warnings (if any):
-  - First `go mod tidy` attempt failed in sandbox due restricted network; rerun with approval succeeded.
+  - Early lint/config/dependency issues were fixed in-round.
 
 ### Risks / Open Items
-- None from this round; changes are naming/type convergence only and API behavior is unchanged.
+- Functional ADRF data path not implemented yet in this consolidated stage.
 
 ### Next Round Plan
-- Proceed to R02 store-path implementation on top of this converged style baseline.
+- Implement R02 store model, Mongo indexes, and StorageRequest flow.
 
 ---
 
-## Round R02 - 2026-03-26 20:20 (UTC+8)
+## Round R02 (Consolidated) - 2026-03-26
+
+Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
 
 ### Pre-Check (before coding)
-- Goal: Build R02 data persistence foundation for `NadrfDataStoreRecord` in MongoDB.
+- Goal: Deliver store-path baseline and improve maintainability/observability standards.
 - Scope (in):
-  - define persisted data model
-  - define `storeTransId` generation helper
-  - initialize Mongo indexes for `supi` and `ingestedAt` (plus `storeTransId` uniqueness)
-- Scope (out):
-  - full StorageRequest handler flow
-  - retrieval query path
-  - callback/notification logic
+  - persistent model + Mongo repository/indexes
+  - `POST /data-store-records` end-to-end path
+  - comment/log quality convergence
+  - process rule updates for documentation discipline
+- Scope (out): retrieval subscribe/request/unsubscribe implementation.
 - Required docs re-read:
-  - docs/contract/adrf1.md (sections: 1, 2, 3)
-  - docs/contract/adrf2.md (sections: 2.2, 4.1, 5.1)
-  - docs/impl/adrf-free5gc-alignment-guide.md (sections: 3.2, 5.2, 6.3)
-  - docs/process/implementation-protocol.md (sections: 2, 4, 5)
+  - docs/contract/adrf1.md
+  - docs/contract/adrf2.md
+  - docs/impl/adrf-free5gc-alignment-guide.md
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml
+  - docs/process/implementation-protocol.md
 - Constraints confirmed:
-  - free5gc-style package layering
-  - English comments for key design logic
-  - validation command set (fmt, golangci-lint, vet, build, test)
+  - free5gc-style logging and API behavior
+  - maintainer-facing English comments
+  - validation command set
 
 ### Implementation
-- Files changed:
-  - internal/store/datastore_record.go:
-    - added persisted `NadrfDataStoreRecordDocument` model
-    - added `NewStoreTransID()` generator (UUID-based)
-    - added document constructor with deterministic `ingestedAt` fill
-  - internal/store/datastore_repository.go:
-    - added `DataStoreRepository`
-    - added `EnsureIndexes()` for required Mongo indexes
-    - added `InsertDataStoreRecord()` persistence primitive for next R02 steps
-  - pkg/service/init.go:
-    - wired Mongo bootstrap in startup (`initMongoDataStore()`)
-    - initialized repository from config
-    - connected Mongo via `mongoapi.SetMongoDB`, ping check, and index provisioning
-  - go.mod / go.sum:
-    - dependency updates for new store-layer imports (`google/uuid`, mongo-related modules)
+- Aggregated file changes:
+  - Added persistent store model and repository:
+    - `internal/store/datastore_record.go`
+    - `internal/store/datastore_repository.go`
+  - Added `storeTransId` generation and required Mongo indexes:
+    - unique `storeTransId`
+    - compound `(supi, ingestedAt)`
+    - `ingestedAt`
+  - Wired Mongo bootstrap and repository injection in service startup.
+  - Implemented StorageRequest path:
+    - parse/validate `dataSub + dataNotif`
+    - extract `dataSub[*].smfDataSub.supi`
+    - persist to Mongo
+    - respond `201 + Location + body`
+  - Refined comments/logging to remove internal-round wording and improve key action traceability.
+  - Updated process docs with explicit comment/log hard constraints and rolling-consolidation policy.
 - Key design decisions:
-  - Keep `storeTransId` independent from Mongo `_id` to preserve stable external retrieval key semantics.
-  - Denormalize and persist `supi` alongside payload so retrieval filters do not need deep JSON scans.
-  - Use `ingestedAt` as ADRF acceptance time to support future snapshot cutoff logic.
+  - Keep `storeTransId` as external retrieval key independent from Mongo `_id`.
+  - Use `ingestedAt` as ADRF accept-time metadata for deterministic snapshot logic.
 - Tradeoffs:
-  - Mongo bootstrap currently logs and continues on failure (non-fatal startup) to keep R01 behavior compatibility.
-  - Full StorageRequest handler wiring is deferred to next R02 step by design.
+  - Current store validation focuses on agreed `smfDataSub`-based data path.
+  - Broader TS 29.575 optional variants are deferred.
 
 ### Validation
 - Commands:
@@ -267,59 +154,13 @@ Follow the template in `implementation-protocol.md`.
   - go build ./...
   - go test ./...
 - Result summary:
-  - All commands passed.
-  - `golangci-lint` result: `0 issues`.
+  - All commands passed (`golangci-lint: 0 issues`).
 - Failures/Warnings (if any):
-  - First `go mod tidy` attempt failed in sandbox due restricted network; rerun with approval succeeded.
+  - Minor lint warnings (`shadow`, nil-map check, line length) fixed in-round.
 
 ### Risks / Open Items
-- `InsertDataStoreRecord()` is ready but not yet called from StorageRequest handler in this step.
-- Mongo bootstrap failure is non-fatal; this should be revisited when store API becomes mandatory path.
+- Retrieval subscribe/request/unsubscribe path remains unimplemented.
+- StorageRequest currently targets agreed NWDAF data-shape path; other optional schema branches pending.
 
 ### Next Round Plan
-- Implement StorageRequest handler path to:
-  - parse `dataSub + dataNotif`
-  - extract/validate `supi`
-  - build document and persist via repository
-  - return `201 + Location + resource body`.
-
----
-
-## Round R02-Docs-Followup - 2026-03-26 21:22 (UTC+8)
-
-### Pre-Check (before coding)
-- Goal: Sync newly agreed comment/logging constraints into process documentation for double-check.
-- Scope (in): process docs only.
-- Scope (out): any ADRF code or behavior change.
-- Required docs re-read:
-  - docs/process/implementation-protocol.md (Hard Constraints)
-  - docs/process/iteration-log.md (latest rounds)
-- Constraints confirmed:
-  - comments should be maintainer-facing and avoid internal round wording
-  - logs should be free5gc-style and operationally informative
-
-### Implementation
-- Files changed:
-  - docs/process/implementation-protocol.md:
-    - added explicit comment rule (allow external spec references, disallow internal round/doc references)
-    - added explicit logging rule (enough key action/failure logs under free5gc categories)
-  - docs/process/iteration-log.md:
-    - added this follow-up entry as cross-check record
-- Key design decisions:
-  - keep process constraints explicit in protocol and traceable in iteration log.
-- Tradeoffs:
-  - none (docs-only update).
-
-### Validation
-- Commands:
-  - Not applicable (docs-only update).
-- Result summary:
-  - Documentation sync completed.
-- Failures/Warnings (if any):
-  - None.
-
-### Risks / Open Items
-- None.
-
-### Next Round Plan
-- Continue implementation rounds using updated comment/logging constraints.
+- Implement retrieval subscription persistence model and fetch-queue metadata.
