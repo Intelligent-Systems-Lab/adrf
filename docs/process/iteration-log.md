@@ -298,3 +298,72 @@ Covers: `R02`, `R02-Phase2`, `R02-Code-Followup`, `R02-Docs-Followup`.
 
 ### Next Round Plan
 - Implement RetrievalNotify callback sender with `corrIdBatchSize` chunking and `terminationReq=true` on the last batch (R05).
+
+---
+
+## Round R05 - 2026-03-26 16:34 (UTC+8)
+
+### Pre-Check (before coding)
+- Goal: Implement Retrieval notify callback delivery with corr-id batching and termination signaling.
+- Scope (in):
+  - callback sender abstraction and HTTP implementation
+  - `corrIdBatchSize` batching logic for `fetchInstruct.fetchCorrIds`
+  - `terminationReq=true` on the last callback batch
+  - async dispatch trigger after successful retrieval-subscription creation
+  - unit tests for batching and callback dispatch behavior
+- Scope (out):
+  - `GET /data-store-records` fetch response implementation
+  - retrieval unsubscribe implementation
+  - callback retry scheduler/persistence
+- Required docs re-read:
+  - docs/contract/adrf1.md (retrieval callback batching and termination behavior)
+  - docs/contract/adrf2.md (R05 flow ownership and notify sequence)
+  - docs/impl/adrf-free5gc-alignment-guide.md (free5gc logger/comment style)
+  - docs/spec/TS29575_Nadrf_DataManagement.yaml (`NadrfRetrievalNotify`, `FetchInstruction`)
+- Constraints confirmed:
+  - free5gc-style logger usage
+  - English maintainer-facing comments
+  - validation command set
+
+### Implementation
+- Files changed:
+  - `internal/sbi/processor/processor.go`
+    - added `retrievalNotifier` dependency field and default HTTP sender wiring.
+  - `internal/sbi/processor/retrieval_notification_sender.go` (new)
+    - added callback sender interface + HTTP implementation.
+    - implemented corr-id chunking helper with last-batch `terminationReq=true`.
+    - implemented callback payload build (`notifCorrId`, `fetchInstruct`, optional `terminationReq`, `timeStamp`).
+    - implemented callback transport/error handling and operational logs.
+    - added fetch URI builder for `/data-store-records`.
+  - `internal/sbi/processor/retrieval_subscription_request.go`
+    - after `201 + Location + body`, triggers async callback dispatch with frozen snapshot IDs.
+  - `internal/sbi/processor/retrieval_subscription_request_test.go`
+    - added notifier stub injection and success assertion that callback dispatch is triggered.
+    - added check that `corrIdBatchSize` is read from ADRF config.
+  - `internal/sbi/processor/retrieval_notification_sender_test.go` (new)
+    - added batching tests and callback payload assertions for termination behavior.
+- Key design decisions:
+  - keep callback delivery decoupled from create-subscription response latency via asynchronous dispatch.
+  - keep callback batch-size control at ADRF config (`retrieval.corrIdBatchSize`), independent from NWDAF config.
+  - when no IDs exist, still emit one terminating callback to close workflow deterministically.
+- Tradeoffs:
+  - current callback dispatch has no retry queue/persistence; failures are logged and left for later rounds.
+
+### Validation
+- Commands:
+  - `go fmt ./...`
+  - `docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...`
+  - `go vet ./...`
+  - `go build ./...`
+  - `go test ./...`
+- Result summary:
+  - All commands passed (`golangci-lint: 0 issues`; processor tests green with new R05 tests).
+- Failures/Warnings (if any):
+  - first docker-lint attempt failed due sandbox docker-socket permission; rerun with approved escalation succeeded.
+
+### Risks / Open Items
+- Callback dispatch remains best-effort in-process; ADRF restart loses in-flight callback work.
+- Retry/backoff and dead-letter handling are not implemented yet.
+
+### Next Round Plan
+- Implement `GET /data-store-records` fetch path (single `fetch-correlation-ids` first, 200/204 behavior) for R06.
