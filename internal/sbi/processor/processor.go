@@ -3,6 +3,8 @@ package processor
 import (
 	"context"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -17,6 +19,9 @@ import (
 // that are not supported yet return a structured "not implemented" response.
 type Processor struct {
 	dataStoreRepo dataStoreRecordWriter
+
+	retrievalSubMu sync.RWMutex
+	retrievalSubs  map[string]*retrievalSubscriptionState
 }
 
 // dataStoreRecordWriter is the persistence dependency needed by the store API.
@@ -25,11 +30,19 @@ type Processor struct {
 // while still allowing the concrete repository to be injected in production.
 type dataStoreRecordWriter interface {
 	InsertDataStoreRecord(ctx context.Context, doc *store.NadrfDataStoreRecordDocument) error
+	ListStoreTransIDsBySnapshot(
+		ctx context.Context,
+		supi string,
+		snapshotCutoff time.Time,
+		windowStart time.Time,
+		windowStop time.Time,
+	) ([]string, error)
 }
 
 func NewProcessor(dataStoreRepo dataStoreRecordWriter) *Processor {
 	return &Processor{
 		dataStoreRepo: dataStoreRepo,
+		retrievalSubs: make(map[string]*retrievalSubscriptionState),
 	}
 }
 
@@ -38,8 +51,7 @@ func (p *Processor) HandleCreateDataStoreRecord(c *gin.Context) {
 }
 
 func (p *Processor) HandleCreateDataRetrievalSubscription(c *gin.Context) {
-	logger.ProcLog.Warn("CreateDataRetrievalSubscription is not implemented")
-	p.writeNotImplemented(c, "CREATE_DATA_RETRIEVAL_SUBSCRIPTION")
+	p.handleCreateDataRetrievalSubscription(c)
 }
 
 func (p *Processor) HandleGetDataStoreRecords(c *gin.Context) {
