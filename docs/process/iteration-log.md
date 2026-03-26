@@ -209,3 +209,117 @@ Follow the template in `implementation-protocol.md`.
 
 ### Next Round Plan
 - Proceed to R02 store-path implementation on top of this converged style baseline.
+
+---
+
+## Round R02 - 2026-03-26 20:20 (UTC+8)
+
+### Pre-Check (before coding)
+- Goal: Build R02 data persistence foundation for `NadrfDataStoreRecord` in MongoDB.
+- Scope (in):
+  - define persisted data model
+  - define `storeTransId` generation helper
+  - initialize Mongo indexes for `supi` and `ingestedAt` (plus `storeTransId` uniqueness)
+- Scope (out):
+  - full StorageRequest handler flow
+  - retrieval query path
+  - callback/notification logic
+- Required docs re-read:
+  - docs/contract/adrf1.md (sections: 1, 2, 3)
+  - docs/contract/adrf2.md (sections: 2.2, 4.1, 5.1)
+  - docs/impl/adrf-free5gc-alignment-guide.md (sections: 3.2, 5.2, 6.3)
+  - docs/process/implementation-protocol.md (sections: 2, 4, 5)
+- Constraints confirmed:
+  - free5gc-style package layering
+  - English comments for key design logic
+  - validation command set (fmt, golangci-lint, vet, build, test)
+
+### Implementation
+- Files changed:
+  - internal/store/datastore_record.go:
+    - added persisted `NadrfDataStoreRecordDocument` model
+    - added `NewStoreTransID()` generator (UUID-based)
+    - added document constructor with deterministic `ingestedAt` fill
+  - internal/store/datastore_repository.go:
+    - added `DataStoreRepository`
+    - added `EnsureIndexes()` for required Mongo indexes
+    - added `InsertDataStoreRecord()` persistence primitive for next R02 steps
+  - pkg/service/init.go:
+    - wired Mongo bootstrap in startup (`initMongoDataStore()`)
+    - initialized repository from config
+    - connected Mongo via `mongoapi.SetMongoDB`, ping check, and index provisioning
+  - go.mod / go.sum:
+    - dependency updates for new store-layer imports (`google/uuid`, mongo-related modules)
+- Key design decisions:
+  - Keep `storeTransId` independent from Mongo `_id` to preserve stable external retrieval key semantics.
+  - Denormalize and persist `supi` alongside payload so retrieval filters do not need deep JSON scans.
+  - Use `ingestedAt` as ADRF acceptance time to support future snapshot cutoff logic.
+- Tradeoffs:
+  - Mongo bootstrap currently logs and continues on failure (non-fatal startup) to keep R01 behavior compatibility.
+  - Full StorageRequest handler wiring is deferred to next R02 step by design.
+
+### Validation
+- Commands:
+  - go mod tidy
+  - go fmt ./...
+  - docker run --rm -v "$PWD":/app -w /app golangci/golangci-lint:latest golangci-lint run ./...
+  - go vet ./...
+  - go build ./...
+  - go test ./...
+- Result summary:
+  - All commands passed.
+  - `golangci-lint` result: `0 issues`.
+- Failures/Warnings (if any):
+  - First `go mod tidy` attempt failed in sandbox due restricted network; rerun with approval succeeded.
+
+### Risks / Open Items
+- `InsertDataStoreRecord()` is ready but not yet called from StorageRequest handler in this step.
+- Mongo bootstrap failure is non-fatal; this should be revisited when store API becomes mandatory path.
+
+### Next Round Plan
+- Implement StorageRequest handler path to:
+  - parse `dataSub + dataNotif`
+  - extract/validate `supi`
+  - build document and persist via repository
+  - return `201 + Location + resource body`.
+
+---
+
+## Round R02-Docs-Followup - 2026-03-26 21:22 (UTC+8)
+
+### Pre-Check (before coding)
+- Goal: Sync newly agreed comment/logging constraints into process documentation for double-check.
+- Scope (in): process docs only.
+- Scope (out): any ADRF code or behavior change.
+- Required docs re-read:
+  - docs/process/implementation-protocol.md (Hard Constraints)
+  - docs/process/iteration-log.md (latest rounds)
+- Constraints confirmed:
+  - comments should be maintainer-facing and avoid internal round wording
+  - logs should be free5gc-style and operationally informative
+
+### Implementation
+- Files changed:
+  - docs/process/implementation-protocol.md:
+    - added explicit comment rule (allow external spec references, disallow internal round/doc references)
+    - added explicit logging rule (enough key action/failure logs under free5gc categories)
+  - docs/process/iteration-log.md:
+    - added this follow-up entry as cross-check record
+- Key design decisions:
+  - keep process constraints explicit in protocol and traceable in iteration log.
+- Tradeoffs:
+  - none (docs-only update).
+
+### Validation
+- Commands:
+  - Not applicable (docs-only update).
+- Result summary:
+  - Documentation sync completed.
+- Failures/Warnings (if any):
+  - None.
+
+### Risks / Open Items
+- None.
+
+### Next Round Plan
+- Continue implementation rounds using updated comment/logging constraints.
