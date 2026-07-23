@@ -37,6 +37,71 @@ type dataStoreRecordPayload struct {
 	DataNotif map[string]any   `json:"dataNotif"`
 }
 
+type dataStoreSearchRequest struct {
+	Supi      string `json:"supi,omitempty"`
+	StartTime string `json:"startTime,omitempty"`
+	EndTime   string `json:"endTime,omitempty"`
+	Limit     int64  `json:"limit,omitempty"`
+	Offset    int64  `json:"offset,omitempty"`
+}
+
+type dataStoreSearchResponse struct {
+	Total   int64                           `json:"total"`
+	Records []*store.NadrfDataStoreRecordDocument `json:"records"`
+}
+
+func (p *Processor) HandleSearchDataStoreRecords(c *gin.Context) {
+	if p.dataStoreRepo == nil {
+		p.writeProblem(c, newProblemDetails(http.StatusInternalServerError, "SYSTEM_FAILURE", "DataStore repository is unavailable", nil))
+		return
+	}
+
+	var req dataStoreSearchRequest
+	if c.Request.Method == http.MethodPost {
+		_ = c.ShouldBindJSON(&req)
+	}
+	if req.Supi == "" {
+		req.Supi = c.Query("supi")
+	}
+
+	var startTime, endTime *time.Time
+	if req.StartTime == "" {
+		req.StartTime = c.Query("startTime")
+	}
+	if req.EndTime == "" {
+		req.EndTime = c.Query("endTime")
+	}
+	if req.StartTime != "" {
+		if t, err := time.Parse(time.RFC3339, req.StartTime); err == nil {
+			startTime = &t
+		}
+	}
+	if req.EndTime != "" {
+		if t, err := time.Parse(time.RFC3339, req.EndTime); err == nil {
+			endTime = &t
+		}
+	}
+
+	if req.Limit <= 0 {
+		req.Limit = 100
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	records, total, err := p.dataStoreRepo.SearchRecordsByFilter(ctx, req.Supi, startTime, endTime, req.Limit, req.Offset)
+	if err != nil {
+		logger.ProcLog.Errorf("SearchRecordsByFilter failed: %v", err)
+		p.writeProblem(c, newProblemDetails(http.StatusInternalServerError, "SYSTEM_FAILURE", "Search data store records failed", nil))
+		return
+	}
+
+	c.JSON(http.StatusOK, dataStoreSearchResponse{
+		Total:   total,
+		Records: records,
+	})
+}
+
 func (p *Processor) handleCreateDataStoreRecord(c *gin.Context) {
 	if p.dataStoreRepo == nil {
 		logger.ProcLog.Error("DataStore repository is not initialized")

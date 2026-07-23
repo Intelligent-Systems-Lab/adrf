@@ -4,11 +4,25 @@ info:
 
 configuration:
   adrfName: ADRF
+  nrfUri: http://127.0.0.10:8000
   sbi:
     scheme: http
     registerIPv4: 127.0.0.1
     bindingIPv4: 127.0.0.1
     port: 9888
+    oauth: false
+  serviceNameList:
+    - nadrf-mlmodelmanagement
+    - nadrf-datamanagement
+  plmnSupportList:
+    - plmnId:
+        mcc: "208"
+        mnc: "93"
+      snssaiList:
+        - sst: 1
+          sd: "010203"
+  locality: area1
+  heartbeatInterval: 10
   mongodb:
     name: adrf
     url: mongodb://127.0.0.1:27017

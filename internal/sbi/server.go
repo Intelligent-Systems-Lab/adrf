@@ -46,6 +46,11 @@ func NewServer(adrf adrfApp) (*Server, error) {
 	dataMgmtGroup := s.router.Group(factory.AdrfDataManagementResUriPrefix)
 	applyRoutes(dataMgmtGroup, dataMgmtRoutes)
 
+	mlModelMgmtRoutes := s.getMLModelManagementRoutes()
+	mlModelMgmtGroup := s.router.Group(factory.AdrfMLModelManagementResUriPrefix)
+	applyRoutes(mlModelMgmtGroup, mlModelMgmtRoutes)
+
+
 	cfg := adrf.Config()
 	bindAddr := fmt.Sprintf("%s:%d", cfg.Configuration.Sbi.BindingIPv4, cfg.Configuration.Sbi.Port)
 	logger.SBILog.Infof("binding addr: [%s]", bindAddr)
@@ -74,6 +79,12 @@ func (s *Server) getDataManagementRoutes() []Route {
 			APIFunc: s.HandleGetDataStoreRecords,
 		},
 		{
+			Name:    "SearchDataStoreRecords",
+			Method:  "POST",
+			Pattern: factory.AdrfDataStoreRecordsPath + "/search",
+			APIFunc: s.HandleSearchDataStoreRecords,
+		},
+		{
 			Name:    "CreateDataRetrievalSubscription",
 			Method:  "POST",
 			Pattern: factory.AdrfDataRetrievalSubscriptionsPath,
@@ -84,6 +95,47 @@ func (s *Server) getDataManagementRoutes() []Route {
 			Method:  "DELETE",
 			Pattern: factory.AdrfDataRetrievalSubscriptionsPath + "/:subscriptionId",
 			APIFunc: s.HandleDeleteDataRetrievalSubscription,
+		},
+	}
+}
+
+func (s *Server) getMLModelManagementRoutes() []Route {
+	return []Route{
+		{
+			Name:    "CreateMLModelStoreRecord",
+			Method:  "POST",
+			Pattern: factory.AdrfMLModelStoreRecordsPath,
+			APIFunc: s.HandleCreateMLModelStoreRecord,
+		},
+		{
+			Name:    "GetMLModelStoreRecords",
+			Method:  "GET",
+			Pattern: factory.AdrfMLModelStoreRecordsPath,
+			APIFunc: s.HandleGetMLModelStoreRecords,
+		},
+		{
+			Name:    "GetIndividualMLModelStoreRecord",
+			Method:  "GET",
+			Pattern: factory.AdrfMLModelStoreRecordsPath + "/:storeTransId",
+			APIFunc: s.HandleGetIndividualMLModelStoreRecord,
+		},
+		{
+			Name:    "DownloadMLModelFile",
+			Method:  "GET",
+			Pattern: factory.AdrfMLModelStoreRecordsPath + "/:storeTransId/model",
+			APIFunc: s.HandleDownloadMLModelFile,
+		},
+		{
+			Name:    "UpdateIndividualMLModelStoreRecord",
+			Method:  "PUT",
+			Pattern: factory.AdrfMLModelStoreRecordsPath + "/:storeTransId",
+			APIFunc: s.HandleUpdateIndividualMLModelStoreRecord,
+		},
+		{
+			Name:    "DeleteIndividualMLModelStoreRecord",
+			Method:  "DELETE",
+			Pattern: factory.AdrfMLModelStoreRecordsPath + "/:storeTransId",
+			APIFunc: s.HandleDeleteIndividualMLModelStoreRecord,
 		},
 	}
 }

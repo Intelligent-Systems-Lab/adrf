@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -22,12 +23,6 @@ func NewDataStoreRepository(dbName string) *DataStoreRepository {
 	return &DataStoreRepository{dbName: dbName}
 }
 
-// EnsureIndexes provisions required indexes for store and retrieval paths.
-//
-// Required indexes:
-//  1. unique(storeTransId): retrieval key uniqueness guarantee.
-//  2. (supi, ingestedAt): primary access pattern for UE and time-window filters.
-//  3. ingestedAt: supporting index for time-based maintenance and scans.
 func (r *DataStoreRepository) EnsureIndexes(ctx context.Context) error {
 	if r.dbName == "" {
 		return errors.New("mongodb database name is empty")
@@ -53,6 +48,11 @@ func (r *DataStoreRepository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().
 				SetName("idx_ingested_at"),
 		},
+		{
+			Keys: bson.D{{Key: "expiryTime", Value: 1}},
+			Options: options.Index().
+				SetName("idx_expiry_time"),
+		},
 	}
 
 	logger.StoreLog.Infof("Ensuring Mongo indexes for collection: %s", DataStoreRecordsCollectionName)
@@ -65,7 +65,6 @@ func (r *DataStoreRepository) EnsureIndexes(ctx context.Context) error {
 	return nil
 }
 
-// InsertDataStoreRecord persists one store record document into Mongo.
 func (r *DataStoreRepository) InsertDataStoreRecord(
 	ctx context.Context,
 	doc *NadrfDataStoreRecordDocument,
@@ -85,6 +84,74 @@ func (r *DataStoreRepository) InsertDataStoreRecord(
 
 	logger.StoreLog.Debugf("Store record inserted: storeTransId=%s", doc.StoreTransID)
 	return nil
+}
+
+// SearchRecordsByFilter performs paginated timeWindow/supi searches.
+func (r *DataStoreRepository) SearchRecordsByFilter(
+	ctx context.Context,
+	supi string,
+	startTime, endTime *time.Time,
+	limit, offset int64,
+) ([]*NadrfDataStoreRecordDocument, int64, error) {
+	if mongoapi.Client == nil {
+		return nil, 0, errors.New("mongodb client is not initialized")
+	}
+
+	filter := bson.M{}
+	if supi != "" {
+		filter["supi"] = supi
+	}
+	if startTime != nil || endTime != nil {
+		timeFilter := bson.M{}
+		if startTime != nil {
+			timeFilter["$gte"] = *startTime
+		}
+		if endTime != nil {
+			timeFilter["$lte"] = *endTime
+		}
+		filter["ingestedAt"] = timeFilter
+	}
+
+	total, err := r.collection().CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count data store records: %w", err)
+	}
+
+	findOpts := options.Find().SetSort(bson.D{{Key: "ingestedAt", Value: -1}})
+	if limit > 0 {
+		findOpts.SetLimit(limit)
+	}
+	if offset > 0 {
+		findOpts.SetSkip(offset)
+	}
+
+	cursor, err := r.collection().Find(ctx, filter, findOpts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to search data store records: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []*NadrfDataStoreRecordDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, 0, fmt.Errorf("failed to decode data store records: %w", err)
+	}
+	return docs, total, nil
+}
+
+// DeleteExpiredRecords purges records whose expiryTime is past.
+func (r *DataStoreRepository) DeleteExpiredRecords(ctx context.Context, now time.Time) (int64, error) {
+	if mongoapi.Client == nil {
+		return 0, errors.New("mongodb client is not initialized")
+	}
+
+	filter := bson.M{
+		"expiryTime": bson.M{"$gt": time.Time{}, "$lte": now},
+	}
+	res, err := r.collection().DeleteMany(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete expired data store records: %w", err)
+	}
+	return res.DeletedCount, nil
 }
 
 func (r *DataStoreRepository) collection() *mongo.Collection {

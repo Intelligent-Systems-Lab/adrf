@@ -226,6 +226,24 @@ func (r *inMemoryDataStoreRepo) ListStoreTransIDsBySnapshot(
 	return result, nil
 }
 
+func (r *inMemoryDataStoreRepo) SearchRecordsByFilter(
+	_ context.Context,
+	_ string,
+	_, _ *time.Time,
+	_, _ int64,
+) ([]*store.NadrfDataStoreRecordDocument, int64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var docs []*store.NadrfDataStoreRecordDocument
+	for _, id := range r.order {
+		if doc, ok := r.byID[id]; ok {
+			docs = append(docs, doc)
+		}
+	}
+	return docs, int64(len(docs)), nil
+}
+
 func dataNotifHasStartTimeMatch(dataNotif bson.M, windowStart time.Time, windowStop time.Time) bool {
 	rawNotifs, ok := mapValueAny(dataNotif, "upfEventNotifs")
 	if !ok {

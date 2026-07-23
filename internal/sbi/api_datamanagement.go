@@ -14,6 +14,10 @@ func (s *Server) HandleGetDataStoreRecords(c *gin.Context) {
 	s.Processor().HandleGetDataStoreRecords(c)
 }
 
+func (s *Server) HandleSearchDataStoreRecords(c *gin.Context) {
+	s.Processor().HandleSearchDataStoreRecords(c)
+}
+
 func (s *Server) HandleDeleteDataRetrievalSubscription(c *gin.Context) {
 	s.Processor().HandleDeleteDataRetrievalSubscription(c)
 }

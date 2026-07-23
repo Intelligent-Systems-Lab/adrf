@@ -1,11 +1,19 @@
 package consumer
 
 // Consumer keeps outbound call dependencies for ADRF.
-//
-// This placeholder keeps free5gc-style layering and avoids refactoring package
-// wiring once callback/notification flows are added.
-type Consumer struct{}
+type Consumer struct {
+	nrfService *NrfService
+}
 
 func NewConsumer() (*Consumer, error) {
-	return &Consumer{}, nil
+	return &Consumer{
+		nrfService: NewNrfService(),
+	}, nil
+}
+
+func (c *Consumer) NrfService() *NrfService {
+	if c == nil {
+		return nil
+	}
+	return c.nrfService
 }

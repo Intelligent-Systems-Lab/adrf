@@ -60,6 +60,15 @@ func (s *stubDataStoreRepo) GetDataStoreRecordByStoreTransID(
 	return s.fetchDoc, nil
 }
 
+func (s *stubDataStoreRepo) SearchRecordsByFilter(
+	_ context.Context,
+	_ string,
+	_, _ *time.Time,
+	_, _ int64,
+) ([]*store.NadrfDataStoreRecordDocument, int64, error) {
+	return s.inserted, int64(len(s.inserted)), nil
+}
+
 func TestCreateDataStoreRecordSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

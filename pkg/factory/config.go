@@ -6,6 +6,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/free5gc/adrf/internal/logger"
+	"github.com/free5gc/openapi/models"
 )
 
 const (
@@ -19,7 +20,11 @@ const (
 	AdrfDataManagementResUriPrefix     = "/nadrf-datamanagement/v1"
 	AdrfDataStoreRecordsPath           = "/data-store-records"
 	AdrfDataRetrievalSubscriptionsPath = "/data-retrieval-subscriptions"
+
+	AdrfMLModelManagementResUriPrefix = "/nadrf-mlmodelmanagement/v1"
+	AdrfMLModelStoreRecordsPath       = "/mlmodel-store-records"
 )
+
 
 type Config struct {
 	Info          *Info          `yaml:"info"`
@@ -33,10 +38,26 @@ type Info struct {
 }
 
 type Configuration struct {
-	AdrfName  string     `yaml:"adrfName,omitempty"`
-	Sbi       *Sbi       `yaml:"sbi,omitempty"`
-	Mongodb   *Mongodb   `yaml:"mongodb,omitempty"`
-	Retrieval *Retrieval `yaml:"retrieval,omitempty"`
+	AdrfName          string             `yaml:"adrfName,omitempty"`
+	NrfUri            string             `yaml:"nrfUri,omitempty"`
+	NfInstanceId      string             `yaml:"nfInstanceId,omitempty"`
+	Sbi               *Sbi               `yaml:"sbi,omitempty"`
+	ServiceNameList   []models.ServiceName `yaml:"serviceNameList,omitempty"`
+	PlmnSupportList   []PlmnSupportItem  `yaml:"plmnSupportList,omitempty"`
+	Locality          string             `yaml:"locality,omitempty"`
+	HeartbeatInterval int                `yaml:"heartbeatInterval,omitempty"`
+	Mongodb           *Mongodb           `yaml:"mongodb,omitempty"`
+	Retrieval         *Retrieval         `yaml:"retrieval,omitempty"`
+	MLModelStorage    *MLModelStorage    `yaml:"mlModelStorage,omitempty"`
+}
+
+type PlmnSupportItem struct {
+	PlmnId     *models.PlmnId  `yaml:"plmnId"`
+	SnssaiList []models.Snssai `yaml:"snssaiList,omitempty"`
+}
+
+type MLModelStorage struct {
+	LocalDirectory string `yaml:"localDirectory,omitempty"`
 }
 
 type Sbi struct {
@@ -44,6 +65,13 @@ type Sbi struct {
 	RegisterIPv4 string `yaml:"registerIPv4,omitempty"`
 	BindingIPv4  string `yaml:"bindingIPv4,omitempty"`
 	Port         int    `yaml:"port,omitempty"`
+	OAuth        bool   `yaml:"oauth,omitempty"`
+	TLS          *TLS   `yaml:"tls,omitempty"`
+}
+
+type TLS struct {
+	Pem string `yaml:"pem,omitempty"`
+	Key string `yaml:"key,omitempty"`
 }
 
 type Mongodb struct {
@@ -115,6 +143,12 @@ func (c *Config) setDefaults() {
 	}
 	if c.Configuration.Retrieval.Snapshot == nil {
 		c.Configuration.Retrieval.Snapshot = &Snapshot{Enabled: true}
+	}
+	if c.Configuration.MLModelStorage == nil {
+		c.Configuration.MLModelStorage = &MLModelStorage{}
+	}
+	if c.Configuration.MLModelStorage.LocalDirectory == "" {
+		c.Configuration.MLModelStorage.LocalDirectory = "./storage/models"
 	}
 }
 

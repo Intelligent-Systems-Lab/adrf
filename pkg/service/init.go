@@ -15,6 +15,7 @@ import (
 	"github.com/free5gc/adrf/internal/sbi"
 	"github.com/free5gc/adrf/internal/sbi/consumer"
 	"github.com/free5gc/adrf/internal/sbi/processor"
+	"github.com/free5gc/adrf/internal/service"
 	"github.com/free5gc/adrf/internal/store"
 	"github.com/free5gc/adrf/pkg/app"
 	"github.com/free5gc/adrf/pkg/factory"
@@ -24,16 +25,18 @@ import (
 var _ app.App = &AdrfApp{}
 
 type AdrfApp struct {
-	cfg       *factory.Config
-	adrfCtx   *adrf_context.ADRFContext
-	ctx       context.Context
-	cancel    context.CancelFunc
-	consumer  *consumer.Consumer
-	processor *processor.Processor
-	dataStore *store.DataStoreRepository
-	sbiServer *sbi.Server
-	wg        sync.WaitGroup
+	cfg          *factory.Config
+	adrfCtx      *adrf_context.ADRFContext
+	ctx          context.Context
+	cancel       context.CancelFunc
+	consumer     *consumer.Consumer
+	processor    *processor.Processor
+	dataStore    *store.DataStoreRepository
+	mlModelStore *store.MLModelRepository
+	sbiServer    *sbi.Server
+	wg           sync.WaitGroup
 }
+
 
 func NewApp(ctx context.Context, cfg *factory.Config) (*AdrfApp, error) {
 	adrf := &AdrfApp{
@@ -51,10 +54,11 @@ func NewApp(ctx context.Context, cfg *factory.Config) (*AdrfApp, error) {
 
 	adrf_context.Init()
 	adrf.adrfCtx = adrf_context.GetSelf()
-	adrf.adrfCtx.AdrfName = cfg.GetAdrfName()
+	adrf.adrfCtx.InitFromConfig(cfg)
 
 	if cfg.Configuration != nil && cfg.Configuration.Mongodb != nil {
 		adrf.dataStore = store.NewDataStoreRepository(cfg.Configuration.Mongodb.Name)
+		adrf.mlModelStore = store.NewMLModelRepository(cfg.Configuration.Mongodb.Name)
 	}
 
 	var err error
@@ -64,6 +68,7 @@ func NewApp(ctx context.Context, cfg *factory.Config) (*AdrfApp, error) {
 	}
 
 	adrf.processor = processor.NewProcessor(adrf.dataStore)
+	adrf.processor.SetMLModelRepo(adrf.mlModelStore)
 
 	adrf.sbiServer, err = sbi.NewServer(adrf)
 	if err != nil {
@@ -116,6 +121,13 @@ func (a *AdrfApp) SetReportCaller(reportCaller bool) {
 func (a *AdrfApp) Start() {
 	logger.InitLog.Infoln("ADRF server started")
 	a.initMongoDataStore()
+
+	// Start TTL Background Worker
+	ttlWorker := service.NewTTLWorker(a.dataStore, a.mlModelStore, 60*time.Second)
+	ttlWorker.Start(a.ctx)
+
+	// Start NRF Registration Procedure & Heartbeat Loop
+	consumer.RegisterADRFProcedure(a.ctx, a.consumer, a.adrfCtx)
 
 	a.wg.Add(1)
 	go a.listenShutdownEvent()
@@ -192,10 +204,19 @@ func (a *AdrfApp) initMongoDataStore() {
 		logger.InitLog.Infof("DataStore repository initialized: db=%s", mongodb.Name)
 	}
 
+	if a.mlModelStore == nil {
+		a.mlModelStore = store.NewMLModelRepository(mongodb.Name)
+		logger.InitLog.Infof("MLModelStore repository initialized: db=%s", mongodb.Name)
+	}
+
 	indexCtx, indexCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer indexCancel()
 	if err := a.dataStore.EnsureIndexes(indexCtx); err != nil {
 		logger.InitLog.Errorf("Failed to ensure MongoDB indexes: %v", err)
+		return
+	}
+	if err := a.mlModelStore.EnsureIndexes(indexCtx); err != nil {
+		logger.InitLog.Errorf("Failed to ensure MongoDB MLModel indexes: %v", err)
 		return
 	}
 

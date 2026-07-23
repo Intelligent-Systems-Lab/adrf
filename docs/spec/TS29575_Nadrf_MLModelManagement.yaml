@@ -1,0 +1,255 @@
+openapi: 3.0.0
+info:
+  version: 1.0.0
+  title: Nadrf_MLModelManagement
+  description: |
+    ADRF ML Model Management Service.  
+    © 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).  
+    All rights reserved.
+externalDocs:
+  description: 3GPP TS 29.575 V19.6.0; 5G System; Analytics Data Repository Services; Stage 3.
+  url: 'https://www.3gpp.org/ftp/Specs/archive/29_series/29.575/'
+#
+servers:
+  - url: '{apiRoot}/nadrf-mlmodelmanagement/v1'
+    variables:
+      apiRoot:
+        default: https://example.com
+        description: apiRoot as defined in clause 4.4 of 3GPP TS 29.501.
+#
+security:
+  - oAuth2ClientCredentials:
+      - nadrf-mlmodelmanagement
+  - {}
+#
+paths:
+  /mlmodel-store-records:
+    post:
+      summary: Creates a new Individual ML Model Store Record resource.
+      operationId: CreateADRFMLModelStoreRecord
+      tags:
+        - ADRF ML Model Store Records (Collection)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NadrfMLModelStoreRecord'
+        required: true
+        description: ADRF ML model store record to be stored.
+      responses:
+        '201':
+          description: Successful creation of new Individual ADRF ML Model Store Record resource.
+          headers:
+            Location:
+              description: >
+                Contains the URI of the newly created resource, according to the structure
+                {apiRoot}/nadrf-mlmodelmanagement/<apiVersion>/mlmodel-store-records/{storeTransId}
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NadrfMLModelStoreRecord'
+        '400':
+          description: Bad Request.
+        '500':
+          description: Internal Server Error.
+
+    get:
+      summary: Retrieves stored ML Model Store Records from ADRF.
+      operationId: GetADRFMLModelStoreRecords
+      tags:
+        - ADRF ML Model Store Records (Collection)
+      parameters:
+        - name: model-unique-ids
+          in: query
+          description: Fetch correlation identifiers representing the unique model IDs.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: Successfully retrieved stored ML Model Store Records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NadrfMLModelStoreRecord'
+        '204':
+          description: No Content (No matching models found).
+        '400':
+          description: Bad Request.
+        '500':
+          description: Internal Server Error.
+
+  /mlmodel-store-records/{storeTransId}:
+    get:
+      summary: Retrieves details of an Individual ML Model Store Record.
+      operationId: GetIndividualMLModelStoreRecord
+      tags:
+        - Individual ADRF ML Model Store Record
+      parameters:
+        - name: storeTransId
+          in: path
+          description: Store Transaction Identifier.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved store record details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NadrfMLModelStoreRecord'
+        '404':
+          description: Not Found.
+        '500':
+          description: Internal Server Error.
+
+    put:
+      summary: Updates details of an Individual ML Model Store Record.
+      operationId: UpdateIndividualMLModelStoreRecord
+      tags:
+        - Individual ADRF ML Model Store Record
+      parameters:
+        - name: storeTransId
+          in: path
+          description: Store Transaction Identifier.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NadrfMLModelStoreRecord'
+        required: true
+      responses:
+        '200':
+          description: Successfully updated store record details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NadrfMLModelStoreRecord'
+        '240':
+          description: No Content (Empty update response).
+        '404':
+          description: Not Found.
+        '500':
+          description: Internal Server Error.
+
+    delete:
+      summary: Deletes an Individual ML Model Store Record.
+      operationId: DeleteIndividualMLModelStoreRecord
+      tags:
+        - Individual ADRF ML Model Store Record
+      parameters:
+        - name: storeTransId
+          in: path
+          description: Store Transaction Identifier.
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Successfully deleted Individual ADRF ML Model Store Record.
+        '404':
+          description: Not Found.
+        '500':
+          description: Internal Server Error.
+
+  /mlmodel-store-records/{storeTransId}/model:
+    get:
+      summary: Downloads the stored model file binary.
+      operationId: DownloadMLModelFile
+      tags:
+        - Individual ADRF ML Model Store Record File
+      parameters:
+        - name: storeTransId
+          in: path
+          description: Store Transaction Identifier.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved the binary model file package.
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not Found.
+        '500':
+          description: Internal Server Error.
+
+components:
+  securitySchemes:
+    oAuth2ClientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: '{nrfApiRoot}/oauth2/token'
+          scopes:
+            nadrf-mlmodelmanagement: Access to the nadrf-mlmodelmanagement API.
+
+  schemas:
+    NadrfMLModelStoreRecord:
+      type: object
+      properties:
+        nfInstanceId:
+          type: string
+        nfSetId:
+          type: string
+        mlModelInfo:
+          type: array
+          items:
+            $ref: '#/components/schemas/MLModelInfo'
+          minItems: 1
+        mlModels:
+          type: array
+          items:
+            $ref: '#/components/schemas/MLModel'
+          minItems: 1
+        storeResult:
+          $ref: '#/components/schemas/StoreResult'
+
+    MLModelInfo:
+      type: object
+      required:
+        - modelUniqueId
+        - mlFileAddr
+      properties:
+        modelUniqueId:
+          type: string
+        mlFileAddr:
+          type: string
+        mlStorageSize:
+          type: integer
+          format: int64
+
+    MLModel:
+      type: object
+      required:
+        - modelUniqueId
+      properties:
+        modelUniqueId:
+          type: string
+        mlFileAddr:
+          type: string
+
+    StoreResult:
+      anyOf:
+        - type: string
+          enum:
+            - ML_MODEL_FILE_STORED_IN_ADRF
+            - ML_MODEL_FILE_ADDRESS_NOT_FOUND
+            - ML_MODEL_FILE_DOWNLOAD_FAILED
+            - RETRIEVAL_ML_MODEL_NOT_ALLOWED
+        - type: string
