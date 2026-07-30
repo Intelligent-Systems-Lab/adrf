@@ -22,11 +22,12 @@ graph LR
     NWDAF -- "4. Forward Notification (/api/v1/mtlf/adrf-callback)" --> MTLF
     MTLF -- "5. GET {fetchUri} (Download Snapshot)" --> ADRF
     MTLF -- "6. DELETE /data-retrieval-subscriptions/{id}" --> ADRF
+    NWDAF -- "7. POST /mlmodel-store-records (Register Model)" --> ADRF
 ```
 
 ---
 
-## 🔄 Snapshot Export & Retrieval Lifecycle
+## 🔄 Snapshot Export & ML Model Registration Lifecycle
 
 ```mermaid
 sequenceDiagram
@@ -56,6 +57,11 @@ sequenceDiagram
     MTLF->>ADRF: DELETE /data-retrieval-subscriptions/{subId}
     ADRF->>Mongo: Delete ./storage/snapshots/{subId}.json & Clear Sub State
     ADRF-->>MTLF: 204 No Content
+
+    Note over NWDAF,ADRF: ML Model Registration Phase (TS 29.575 Clause 4.2)
+    NWDAF->>ADRF: POST /nadrf-mlmodelmanagement/v1/mlmodel-store-records (Staging Model URL)
+    ADRF->>Mongo: Store Model Metadata in mlmodel_store_records
+    ADRF-->>NWDAF: 201 Created (Location: /mlmodel-store-records/{storeTransId})
 ```
 
 ---
@@ -87,9 +93,9 @@ sequenceDiagram
 
 ### 2. `Nadrf_MLModelManagement` Service
 
-#### `POST /nadrf-mlmodelmanagement/v1/models`
+#### `POST /nadrf-mlmodelmanagement/v1/mlmodel-store-records`
 * Registers newly trained ML model metadata and download URLs produced by NWDAF / MTLF.
-* **HTTP Response**: `201 Created` with `Location` header.
+* **HTTP Response**: `201 Created` with `Location` header pointing to official ADRF download URI (`/nadrf-mlmodelmanagement/v1/mlmodel-store-records/{storeTransId}/model`).
 
 ---
 
