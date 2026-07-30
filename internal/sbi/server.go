@@ -96,6 +96,12 @@ func (s *Server) getDataManagementRoutes() []Route {
 			Pattern: factory.AdrfDataRetrievalSubscriptionsPath + "/:subscriptionId",
 			APIFunc: s.HandleDeleteDataRetrievalSubscription,
 		},
+		{
+			Name:    "DownloadDataSnapshot",
+			Method:  "GET",
+			Pattern: "/data-snapshots/:snapshotId/download",
+			APIFunc: s.HandleDownloadDataSnapshot,
+		},
 	}
 }
 

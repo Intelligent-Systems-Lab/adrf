@@ -1,7 +1,9 @@
 package processor
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -38,6 +40,9 @@ func (p *Processor) handleDeleteDataRetrievalSubscription(c *gin.Context) {
 			summarizeIdentifier(subscriptionID),
 		)
 	}
+
+	snapshotFilePath := fmt.Sprintf("./storage/snapshots/%s.json", subscriptionID)
+	_ = os.Remove(snapshotFilePath)
 
 	c.Status(http.StatusNoContent)
 }

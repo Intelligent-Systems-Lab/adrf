@@ -1,0 +1,11 @@
+# Binaries
+bin/
+*.exe
+*.exe?
+*.dll
+*.so
+*.dylib
+
+# Storage and test artifacts
+storage/
+*.log

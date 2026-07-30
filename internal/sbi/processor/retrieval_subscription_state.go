@@ -16,6 +16,7 @@ type retrievalSubscriptionState struct {
 	NotifCorrID     string
 	NotificationURI string
 	Supi            string
+	DatasetURL      string
 
 	TimePeriodStart time.Time
 	TimePeriodStop  time.Time

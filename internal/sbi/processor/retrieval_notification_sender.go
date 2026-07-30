@@ -212,10 +212,15 @@ func (p *Processor) dispatchRetrievalFetchNotifications(
 		return
 	}
 
+	effectiveFetchURI := fetchURI
+	if state.DatasetURL != "" {
+		effectiveFetchURI = state.DatasetURL
+	}
+
 	notifyReq := retrievalNotifyRequest{
 		NotificationURI: state.NotificationURI,
 		NotifCorrID:     state.NotifCorrID,
-		FetchURI:        fetchURI,
+		FetchURI:        effectiveFetchURI,
 		FetchCorrIDs:    append([]string(nil), state.FetchCorrIDs...),
 		CorrIDBatchSize: resolveCorrIDBatchSize(),
 	}

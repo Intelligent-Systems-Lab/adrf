@@ -2,10 +2,12 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -124,13 +126,38 @@ func (p *Processor) handleCreateDataRetrievalSubscription(c *gin.Context) {
 		return
 	}
 
-	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
 	subscriptionID := uuid.NewString()
+
+	var snapshotRecords []any
+	for _, id := range fetchCorrIDs {
+		rec, err := p.dataStoreRepo.GetDataStoreRecordByStoreTransID(snapshotCtx, id)
+		if err == nil && rec != nil {
+			snapshotRecords = append(snapshotRecords, rec)
+		}
+	}
+	snapshotDir := "./storage/snapshots"
+	_ = os.MkdirAll(snapshotDir, 0755)
+	snapshotFilePath := fmt.Sprintf("%s/%s.json", snapshotDir, subscriptionID)
+	snapshotData, _ := json.Marshal(snapshotRecords)
+	_ = os.WriteFile(snapshotFilePath, snapshotData, 0644)
+
+	scheme := "http"
+	if c != nil && c.Request != nil && c.Request.TLS != nil {
+		scheme = "https"
+	}
+	host := "192.168.107.5:9888"
+	if c != nil && c.Request != nil && c.Request.Host != "" {
+		host = c.Request.Host
+	}
+	datasetURL := fmt.Sprintf("%s://%s/nadrf-datamanagement/v1/data-snapshots/%s/download", scheme, host, subscriptionID)
+
+	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
 	state := &retrievalSubscriptionState{
 		SubscriptionID:  subscriptionID,
 		NotifCorrID:     req.NotifCorrID,
 		NotificationURI: req.NotificationURI,
 		Supi:            supi,
+		DatasetURL:      datasetURL,
 		TimePeriodStart: windowStart,
 		TimePeriodStop:  windowStop,
 		SnapshotAt:      snapshotAt,

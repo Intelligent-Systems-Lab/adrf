@@ -358,26 +358,42 @@ func (f *fakeNWDAFCallback) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, err
 	}
 
-	for _, corrID := range notify.FetchInstruct.FetchCorrIDs {
-		fetchPath, pathErr := buildFetchPath(notify.FetchInstruct.FetchURI, corrID)
-		if pathErr != nil {
-			return nil, pathErr
-		}
-		fetchResp := performE2ERequest(f.router, http.MethodGet, fetchPath, "", nil)
-
-		switch fetchResp.Code {
-		case http.StatusOK:
-			var record dataStoreRecordPayload
-			if err = json.Unmarshal(fetchResp.Body.Bytes(), &record); err != nil {
-				return nil, err
+	if strings.Contains(notify.FetchInstruct.FetchURI, "/data-snapshots/") {
+		f.mu.Lock()
+		alreadyFetched := len(f.fetched) > 0
+		f.mu.Unlock()
+		if !alreadyFetched {
+			fetchResp := performE2ERequest(f.router, http.MethodGet, notify.FetchInstruct.FetchURI, "", nil)
+			if fetchResp.Code == http.StatusOK {
+				var records []dataStoreRecordPayload
+				if err = json.Unmarshal(fetchResp.Body.Bytes(), &records); err == nil {
+					f.mu.Lock()
+					f.fetched = append(f.fetched, records...)
+					f.mu.Unlock()
+				}
 			}
-			f.mu.Lock()
-			f.fetched = append(f.fetched, record)
-			f.mu.Unlock()
-		case http.StatusNoContent:
-			// Valid no-data response by spec; keep going.
-		default:
-			return nil, fmt.Errorf("unexpected fetch status from ADRF: %d", fetchResp.Code)
+		}
+	} else {
+		for _, corrID := range notify.FetchInstruct.FetchCorrIDs {
+			fetchPath, pathErr := buildFetchPath(notify.FetchInstruct.FetchURI, corrID)
+			if pathErr != nil {
+				return nil, pathErr
+			}
+			fetchResp := performE2ERequest(f.router, http.MethodGet, fetchPath, "", nil)
+
+			switch fetchResp.Code {
+			case http.StatusOK:
+				var record dataStoreRecordPayload
+				if err = json.Unmarshal(fetchResp.Body.Bytes(), &record); err == nil {
+					f.mu.Lock()
+					f.fetched = append(f.fetched, record)
+					f.mu.Unlock()
+				}
+			case http.StatusNoContent:
+				// Valid no-data response by spec; keep going.
+			default:
+				return nil, fmt.Errorf("unexpected fetch status from ADRF: %d", fetchResp.Code)
+			}
 		}
 	}
 
@@ -441,6 +457,7 @@ func newE2ERouter(p *Processor) *gin.Engine {
 		basePath+factory.AdrfDataRetrievalSubscriptionsPath+"/:subscriptionId",
 		p.HandleDeleteDataRetrievalSubscription,
 	)
+	router.GET(basePath+"/data-snapshots/:snapshotId/download", p.HandleDownloadDataSnapshot)
 	return router
 }
 

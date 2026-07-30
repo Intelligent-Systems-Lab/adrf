@@ -81,3 +81,7 @@ func (p *Processor) HandleGetDataStoreRecords(c *gin.Context) {
 func (p *Processor) HandleDeleteDataRetrievalSubscription(c *gin.Context) {
 	p.handleDeleteDataRetrievalSubscription(c)
 }
+
+func (p *Processor) HandleDownloadDataSnapshot(c *gin.Context) {
+	p.handleDownloadDataSnapshot(c)
+}
