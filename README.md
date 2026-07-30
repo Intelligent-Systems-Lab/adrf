@@ -18,9 +18,10 @@ graph LR
 
     NWDAF -- "1. POST /data-store-records" --> ADRF
     NWDAF -- "2. POST /data-retrieval-subscriptions" --> ADRF
-    ADRF -- "3. POST Notification (fetchUri)" --> MTLF
-    MTLF -- "4. GET {fetchUri} (Snapshot Dataset)" --> ADRF
-    MTLF -- "5. DELETE /data-retrieval-subscriptions/{id}" --> ADRF
+    ADRF -- "3. POST Notification (/collector/retrieval-notify)" --> NWDAF
+    NWDAF -- "4. Forward Notification (/api/v1/mtlf/adrf-callback)" --> MTLF
+    MTLF -- "5. GET {fetchUri} (Download Snapshot)" --> ADRF
+    MTLF -- "6. DELETE /data-retrieval-subscriptions/{id}" --> ADRF
 ```
 
 ---
@@ -30,21 +31,24 @@ graph LR
 ```mermaid
 sequenceDiagram
     autonumber
-    participant NWDAF as Go NWDAF
-    participant ADRF as ADRF Service (Port 9888)
+    participant NWDAF as Go NWDAF Core (:8080)
+    participant ADRF as ADRF Service (:9888)
     participant Mongo as MongoDB / File Store
-    participant MTLF as MTLF-subp (Port 9889)
+    participant MTLF as MTLF-subp Gateway (:9889)
 
     NWDAF->>ADRF: POST /data-store-records (Analytics Records)
     ADRF->>Mongo: Store Record in data_store_records
     ADRF-->>NWDAF: 201 Created (Location: /data-store-records/{id})
 
-    NWDAF->>ADRF: POST /data-retrieval-subscriptions
+    NWDAF->>ADRF: POST /data-retrieval-subscriptions (NotifURI: /collector/retrieval-notify)
     ADRF->>Mongo: Query Records & Export JSON Snapshot
     Mongo-->>ADRF: Saved ./storage/snapshots/{subId}.json
     ADRF-->>NWDAF: 201 Created (Location: /data-retrieval-subscriptions/{subId})
 
-    ADRF->>MTLF: POST /adrf-callback (fetchInstruct.fetchUri)
+    ADRF->>NWDAF: POST /collector/retrieval-notify (fetchInstruct.fetchUri)
+    NWDAF-->>ADRF: 204 No Content
+    NWDAF->>MTLF: Forward Notification to /api/v1/mtlf/adrf-callback
+
     MTLF->>ADRF: GET /data-snapshots/{subId}/download
     ADRF->>Mongo: Read Snapshot File
     ADRF-->>MTLF: 200 OK (Application/JSON File)
@@ -67,7 +71,7 @@ sequenceDiagram
 #### `POST /nadrf-datamanagement/v1/data-retrieval-subscriptions`
 * Subscribes to historical data retrieval.
 * Triggers snapshot generation, exporting matched records into a local JSON snapshot file (`./storage/snapshots/{subscriptionId}.json`).
-* Asynchronously sends a `NadrfDataRetrievalNotification` callback to the consumer containing 3GPP compliant `fetchInstruct.fetchUri`.
+* Asynchronously sends a `NadrfDataRetrievalNotification` callback to the subscriber's notification URI (`http://192.168.107.5:8080/collector/retrieval-notify`) containing 3GPP compliant `fetchInstruct.fetchUri`.
 * **HTTP Response**: `201 Created` with `Location: /nadrf-datamanagement/v1/data-retrieval-subscriptions/{subscriptionId}` and `NadrfDataRetrievalSubscription` response body.
 
 #### `GET /nadrf-datamanagement/v1/data-snapshots/{subscriptionId}/download` (`fetchUri`)
