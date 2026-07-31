@@ -1,5 +1,13 @@
 # ADRF Nadrf_MLModelManagement 實作文件 (Implementation Document)
 
+> **Historical implementation note:** This document describes the initial
+> implementation introduced by commit `04e0cba`. It includes repository
+> extensions and examples that are not the current Release 18 wire contract.
+> See
+> [Release 18 ADRF Interoperability Profile](release18-interoperability-profile.md)
+> for the current standard collection-query API, corrected schema, and the
+> NWDAF/PyMTLF/PyAnLF usage boundary.
+
 ## 1. 異動模組與 Go 程式碼實作 (Implementation Details)
 
 ### 1.1 `internal/sbi/api_mlmodelmanagement.go` (SBI 路由與 HTTP Handler)

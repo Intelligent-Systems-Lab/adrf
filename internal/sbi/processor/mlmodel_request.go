@@ -2,11 +2,13 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,22 +21,39 @@ import (
 )
 
 type NadrfMLModelStoreRecord struct {
-	NfInstanceId string        `json:"nfInstanceId,omitempty"`
-	NfSetId      string        `json:"nfSetId,omitempty"`
-	MlModelInfo  []MLModelInfo `json:"mlModelInfo,omitempty"`
-	MlModels     []MLModel     `json:"mlModels,omitempty"`
-	StoreResult  string        `json:"storeResult,omitempty"`
+	NfInstanceId     string            `json:"nfInstanceId,omitempty"`
+	NfSetId          string            `json:"nfSetId,omitempty"`
+	MlModelInfo      []MLModelInfo     `json:"mlModelInfo,omitempty"`
+	MlModels         []MLModel         `json:"mlModels,omitempty"`
+	ModelStoreResult *ModelStoreResult `json:"modelStoreResult,omitempty"`
+	SuppFeat         string            `json:"suppFeat,omitempty"`
 }
 
 type MLModelInfo struct {
-	ModelUniqueId string `json:"modelUniqueId" binding:"required"`
-	MlFileAddr    string `json:"mlFileAddr" binding:"required"`
-	MlStorageSize int64  `json:"mlStorageSize,omitempty"`
+	ModelUniqueId     *int64            `json:"modelUniqueId"`
+	MlFileAddr        *MLModelAddress   `json:"mlFileAddr"`
+	MlStorageSize     *int64            `json:"mlStorageSize"`
+	AllowConsumerList []AllowedConsumer `json:"allowConsumerList,omitempty"`
+}
+
+type MLModelAddress struct {
+	MLModelURL string `json:"mLModelUrl,omitempty"`
+	MLFileFQDN string `json:"mlFileFqdn,omitempty"`
+}
+
+type AllowedConsumer struct {
+	NfInstanceId string `json:"nfInstanceId,omitempty"`
+	NfSetId      string `json:"nfSetId,omitempty"`
 }
 
 type MLModel struct {
-	ModelUniqueId string `json:"modelUniqueId" binding:"required"`
-	MlFileAddr    string `json:"mlFileAddr,omitempty"`
+	ModelUniqueId *int64 `json:"modelUniqueId"`
+	MlModel       []byte `json:"mlModel"`
+}
+
+type ModelStoreResult struct {
+	ModelUniqueId *int64 `json:"modelUniqueId"`
+	StoreResult   string `json:"storeResult"`
 }
 
 func (p *Processor) HandleCreateMLModelStoreRecord(c *gin.Context) {
@@ -94,11 +113,50 @@ func validateMLModelStoreRecordPayload(req *NadrfMLModelStoreRecord) *models.Pro
 
 	hasMlModelInfo := len(req.MlModelInfo) > 0
 	hasMlModels := len(req.MlModels) > 0
-	if !hasMlModelInfo && !hasMlModels {
+	if hasMlModelInfo == hasMlModels {
 		invalidParams = append(
 			invalidParams,
-			invalidParam("/mlModelInfo", "at least one of mlModelInfo or mlModels is required"),
+			invalidParam("/mlModelInfo", "exactly one of mlModelInfo or mlModels is required"),
 		)
+	}
+	if hasMlModels {
+		invalidParams = append(
+			invalidParams,
+			invalidParam("/mlModels", "inline ML model storage is not supported by this deployment"),
+		)
+	}
+	if hasMlModelInfo && len(req.MlModelInfo) != 1 {
+		invalidParams = append(
+			invalidParams,
+			invalidParam("/mlModelInfo", "exactly one URL-backed ML model is supported per request"),
+		)
+	}
+	for index, info := range req.MlModelInfo {
+		path := fmt.Sprintf("/mlModelInfo/%d", index)
+		if info.ModelUniqueId == nil || *info.ModelUniqueId < 0 {
+			invalidParams = append(invalidParams, invalidParam(path+"/modelUniqueId", "a non-negative integer is required"))
+		}
+		if info.MlStorageSize == nil || *info.MlStorageSize < 0 {
+			invalidParams = append(invalidParams, invalidParam(path+"/mlStorageSize", "a non-negative integer is required"))
+		}
+		if info.MlFileAddr == nil ||
+			(strings.TrimSpace(info.MlFileAddr.MLModelURL) == "") ==
+				(strings.TrimSpace(info.MlFileAddr.MLFileFQDN) == "") {
+			invalidParams = append(invalidParams, invalidParam(path+"/mlFileAddr", "exactly one of mLModelUrl or mlFileFqdn is required"))
+		}
+		if info.MlFileAddr != nil && strings.TrimSpace(info.MlFileAddr.MLFileFQDN) != "" {
+			invalidParams = append(invalidParams, invalidParam(path+"/mlFileAddr/mlFileFqdn", "FQDN-backed storage is not supported by this deployment"))
+		}
+		for consumerIndex, consumer := range info.AllowConsumerList {
+			hasInstance := strings.TrimSpace(consumer.NfInstanceId) != ""
+			hasSet := strings.TrimSpace(consumer.NfSetId) != ""
+			if hasInstance == hasSet {
+				invalidParams = append(invalidParams, invalidParam(
+					fmt.Sprintf("%s/allowConsumerList/%d", path, consumerIndex),
+					"exactly one of nfInstanceId or nfSetId is required",
+				))
+			}
+		}
 	}
 
 	if len(invalidParams) > 0 {
@@ -145,16 +203,8 @@ func (p *Processor) handleCreateMLModelStoreRecord(c *gin.Context) {
 	}
 
 	// Currently supporting single model registration per request as per 3GPP TS 29.575 mapping.
-	var modelUniqueId string
-	var sourceMlFileAddr string
-
-	if len(req.MlModelInfo) > 0 {
-		modelUniqueId = req.MlModelInfo[0].ModelUniqueId
-		sourceMlFileAddr = req.MlModelInfo[0].MlFileAddr
-	} else if len(req.MlModels) > 0 {
-		modelUniqueId = req.MlModels[0].ModelUniqueId
-		sourceMlFileAddr = req.MlModels[0].MlFileAddr
-	}
+	modelUniqueId := *req.MlModelInfo[0].ModelUniqueId
+	sourceMlFileAddr := req.MlModelInfo[0].MlFileAddr.MLModelURL
 
 	storeTransId := store.NewStoreTransID()
 
@@ -181,24 +231,47 @@ func (p *Processor) handleCreateMLModelStoreRecord(c *gin.Context) {
 	logger.ProcLog.Infof("Downloading model binary from %s to %s", sourceMlFileAddr, destPath)
 
 	var written int64
-	var storeResult string
 	var err error
 
 	if sourceMlFileAddr != "" {
 		written, err = downloadFile(sourceMlFileAddr, destPath)
 		if err != nil {
 			logger.ProcLog.Warnf("Failed to download model file from %s: %v", sourceMlFileAddr, err)
-			storeResult = "ML_MODEL_FILE_DOWNLOAD_FAILED"
-			req.StoreResult = storeResult
-		} else {
-			logger.ProcLog.Infof("Model binary stored successfully: size=%d bytes", written)
-			storeResult = "ML_MODEL_FILE_STORED_IN_ADRF"
-			req.StoreResult = storeResult
+			_ = os.Remove(destPath)
+			status := http.StatusInternalServerError
+			cause := "ML_MODEL_FILE_DOWNLOAD_FAILED"
+			var sourceError *modelSourceHTTPError
+			if errors.As(err, &sourceError) && sourceError.statusCode == http.StatusNotFound {
+				status = http.StatusNotFound
+				cause = "ML_MODEL_FILE_ADDRESS_NOT_FOUND"
+			}
+			p.writeProblem(c, newProblemDetails(
+				status,
+				cause,
+				"ADRF could not retrieve the supplied ML model file",
+				nil,
+			))
+			return
 		}
-	} else {
-		storeResult = "ML_MODEL_FILE_STORED_IN_ADRF"
-		req.StoreResult = storeResult
+		logger.ProcLog.Infof("Model binary stored successfully: size=%d bytes", written)
 	}
+	if expected := *req.MlModelInfo[0].MlStorageSize; written != expected {
+		_ = os.Remove(destPath)
+		logger.ProcLog.Warnf(
+			"Downloaded model size mismatch: expected=%d actual=%d source=%s",
+			expected,
+			written,
+			sourceMlFileAddr,
+		)
+		p.writeProblem(c, newProblemDetails(
+			http.StatusInternalServerError,
+			"ML_MODEL_FILE_DOWNLOAD_FAILED",
+			"Downloaded ML model size does not match mlStorageSize",
+			nil,
+		))
+		return
+	}
+	const storeResult = "ML_MODEL_FILE_STORED_IN_ADRF"
 
 	// Construct local ADRF download URL
 	host := c.Request.Host
@@ -214,40 +287,36 @@ func (p *Processor) handleCreateMLModelStoreRecord(c *gin.Context) {
 		storeTransId,
 	)
 
-	var mlModelInfoDocs []store.MLModelInfoDoc
-	if len(req.MlModelInfo) > 0 {
-		mlModelInfoDocs = []store.MLModelInfoDoc{
-			{
-				ModelUniqueID: req.MlModelInfo[0].ModelUniqueId,
-				MlFileAddr:    adrfMlFileAddr,
-				MlStorageSize: written,
-			},
-		}
+	allowedConsumers := make([]store.AllowedConsumerDoc, 0, len(req.MlModelInfo[0].AllowConsumerList))
+	for _, consumer := range req.MlModelInfo[0].AllowConsumerList {
+		allowedConsumers = append(allowedConsumers, store.AllowedConsumerDoc{
+			NfInstanceID: consumer.NfInstanceId,
+			NfSetID:      consumer.NfSetId,
+		})
 	}
-
-	var mlModelDocs []store.MLModelDoc
-	if len(req.MlModels) > 0 {
-		mlModelDocs = []store.MLModelDoc{
-			{
-				ModelUniqueID: req.MlModels[0].ModelUniqueId,
-				MlFileAddr:    adrfMlFileAddr,
-			},
-		}
-	}
+	mlModelInfoDocs := []store.MLModelInfoDoc{{
+		ModelUniqueID:     modelUniqueId,
+		MlFileAddr:        adrfMlFileAddr,
+		MlStorageSize:     written,
+		AllowConsumerList: allowedConsumers,
+	}}
 
 	doc := &store.MLModelStoreRecordDocument{
 		StoreTransID:  storeTransId,
 		NfInstanceID:  req.NfInstanceId,
 		NfSetID:       req.NfSetId,
 		MlModelInfo:   mlModelInfoDocs,
-		MlModels:      mlModelDocs,
+		MlModels:      nil,
 		ModelUniqueID: modelUniqueId,
 		MlFileAddr:    adrfMlFileAddr,
 		SourceAddr:    sourceMlFileAddr,
 		StorageSize:   written,
-		StoreResult:   storeResult,
-		CreatedAt:     time.Now().UTC(),
-		UpdatedAt:     time.Now().UTC(),
+		ModelStoreResult: store.ModelStoreResultDoc{
+			ModelUniqueID: modelUniqueId,
+			StoreResult:   storeResult,
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	dbCtx, dbCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
@@ -267,11 +336,11 @@ func (p *Processor) handleCreateMLModelStoreRecord(c *gin.Context) {
 		return
 	}
 
-	if len(req.MlModelInfo) > 0 {
-		req.MlModelInfo[0].MlFileAddr = adrfMlFileAddr
-		req.MlModelInfo[0].MlStorageSize = doc.StorageSize
-	} else if len(req.MlModels) > 0 {
-		req.MlModels[0].MlFileAddr = adrfMlFileAddr
+	req.MlModelInfo[0].MlFileAddr = &MLModelAddress{MLModelURL: adrfMlFileAddr}
+	req.MlModelInfo[0].MlStorageSize = &doc.StorageSize
+	req.ModelStoreResult = &ModelStoreResult{
+		ModelUniqueId: &doc.ModelUniqueID,
+		StoreResult:   storeResult,
 	}
 
 	location := fmt.Sprintf("%s://%s%s%s/%s",
@@ -297,12 +366,52 @@ func (p *Processor) handleGetMLModelStoreRecords(c *gin.Context) {
 		return
 	}
 
-	modelUniqueIds := c.QueryArray("model-unique-ids")
+	storeTransId := strings.TrimSpace(c.Query("store-trans-id"))
+	rawModelUniqueIds, hasModelUniqueIds := c.Request.URL.Query()["model-unique-ids"]
+	if (storeTransId != "") == hasModelUniqueIds {
+		p.writeProblem(c, newProblemDetails(
+			http.StatusBadRequest,
+			"MANDATORY_QUERY_PARAM_INCORRECT",
+			"exactly one of store-trans-id or model-unique-ids is required",
+			nil,
+		))
+		return
+	}
 
 	dbCtx, dbCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer dbCancel()
 
-	docs, err := p.mlModelRepo.GetMLModelStoreRecords(dbCtx, modelUniqueIds)
+	var (
+		doc *store.MLModelStoreRecordDocument
+		err error
+	)
+	if storeTransId != "" {
+		doc, err = p.mlModelRepo.GetMLModelStoreRecord(dbCtx, storeTransId)
+	} else {
+		modelUniqueIds, parseErr := parseModelUniqueIDs(rawModelUniqueIds)
+		if parseErr != nil {
+			p.writeProblem(c, newProblemDetails(
+				http.StatusBadRequest,
+				"MANDATORY_QUERY_PARAM_INCORRECT",
+				parseErr.Error(),
+				nil,
+			))
+			return
+		}
+		var docs []*store.MLModelStoreRecordDocument
+		docs, err = p.mlModelRepo.GetMLModelStoreRecords(dbCtx, modelUniqueIds)
+		if len(docs) == 1 {
+			doc = docs[0]
+		} else if len(docs) > 1 {
+			p.writeProblem(c, newProblemDetails(
+				http.StatusInternalServerError,
+				"SYSTEM_FAILURE",
+				"model-unique-ids did not resolve to one unambiguous store record",
+				nil,
+			))
+			return
+		}
+	}
 	if err != nil {
 		logger.ProcLog.Errorf("Failed to query MLModel records: %v", err)
 		p.writeProblem(c, newProblemDetails(
@@ -314,52 +423,57 @@ func (p *Processor) handleGetMLModelStoreRecords(c *gin.Context) {
 		return
 	}
 
-	if len(docs) == 0 {
+	if doc == nil {
 		c.Status(http.StatusNoContent)
 		return
 	}
 
-	records := make([]NadrfMLModelStoreRecord, 0, len(docs))
-	for _, doc := range docs {
-		rec := NadrfMLModelStoreRecord{
-			NfInstanceId: doc.NfInstanceID,
-			NfSetId:      doc.NfSetID,
-			StoreResult:  doc.StoreResult,
-		}
+	c.JSON(http.StatusOK, mlModelStoreRecordFromDocument(doc))
+}
 
-		if len(doc.MlModelInfo) > 0 {
-			rec.MlModelInfo = make([]MLModelInfo, 0, len(doc.MlModelInfo))
-			for _, infoDoc := range doc.MlModelInfo {
-				rec.MlModelInfo = append(rec.MlModelInfo, MLModelInfo{
-					ModelUniqueId: infoDoc.ModelUniqueID,
-					MlFileAddr:    infoDoc.MlFileAddr,
-					MlStorageSize: infoDoc.MlStorageSize,
-				})
-			}
-		} else {
-			rec.MlModelInfo = []MLModelInfo{
-				{
-					ModelUniqueId: doc.ModelUniqueID,
-					MlFileAddr:    doc.MlFileAddr,
-					MlStorageSize: doc.StorageSize,
-				},
-			}
-		}
-
-		if len(doc.MlModels) > 0 {
-			rec.MlModels = make([]MLModel, 0, len(doc.MlModels))
-			for _, mDoc := range doc.MlModels {
-				rec.MlModels = append(rec.MlModels, MLModel{
-					ModelUniqueId: mDoc.ModelUniqueID,
-					MlFileAddr:    mDoc.MlFileAddr,
-				})
-			}
-		}
-
-		records = append(records, rec)
+func parseModelUniqueIDs(rawValues []string) ([]int64, error) {
+	if len(rawValues) == 0 {
+		return nil, fmt.Errorf("model-unique-ids must contain at least one identifier")
 	}
+	ids := make([]int64, 0, len(rawValues))
+	for _, raw := range rawValues {
+		for _, part := range strings.Split(raw, ",") {
+			value, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil || value < 0 {
+				return nil, fmt.Errorf("model-unique-ids must contain non-negative integers")
+			}
+			ids = append(ids, value)
+		}
+	}
+	return ids, nil
+}
 
-	c.JSON(http.StatusOK, records)
+func mlModelStoreRecordFromDocument(doc *store.MLModelStoreRecordDocument) NadrfMLModelStoreRecord {
+	record := NadrfMLModelStoreRecord{
+		NfInstanceId: doc.NfInstanceID,
+		NfSetId:      doc.NfSetID,
+		ModelStoreResult: &ModelStoreResult{
+			ModelUniqueId: &doc.ModelStoreResult.ModelUniqueID,
+			StoreResult:   doc.ModelStoreResult.StoreResult,
+		},
+	}
+	for _, infoDoc := range doc.MlModelInfo {
+		allowedConsumers := make([]AllowedConsumer, 0, len(infoDoc.AllowConsumerList))
+		for _, consumer := range infoDoc.AllowConsumerList {
+			allowedConsumers = append(allowedConsumers, AllowedConsumer{
+				NfInstanceId: consumer.NfInstanceID,
+				NfSetId:      consumer.NfSetID,
+			})
+		}
+		info := infoDoc
+		record.MlModelInfo = append(record.MlModelInfo, MLModelInfo{
+			ModelUniqueId:     &info.ModelUniqueID,
+			MlFileAddr:        &MLModelAddress{MLModelURL: info.MlFileAddr},
+			MlStorageSize:     &info.MlStorageSize,
+			AllowConsumerList: allowedConsumers,
+		})
+	}
+	return record
 }
 
 func (p *Processor) handleGetIndividualMLModelStoreRecord(c *gin.Context) {
@@ -396,42 +510,7 @@ func (p *Processor) handleGetIndividualMLModelStoreRecord(c *gin.Context) {
 		return
 	}
 
-	record := NadrfMLModelStoreRecord{
-		NfInstanceId: doc.NfInstanceID,
-		NfSetId:      doc.NfSetID,
-		StoreResult:  doc.StoreResult,
-	}
-
-	if len(doc.MlModelInfo) > 0 {
-		record.MlModelInfo = make([]MLModelInfo, 0, len(doc.MlModelInfo))
-		for _, infoDoc := range doc.MlModelInfo {
-			record.MlModelInfo = append(record.MlModelInfo, MLModelInfo{
-				ModelUniqueId: infoDoc.ModelUniqueID,
-				MlFileAddr:    infoDoc.MlFileAddr,
-				MlStorageSize: infoDoc.MlStorageSize,
-			})
-		}
-	} else {
-		record.MlModelInfo = []MLModelInfo{
-			{
-				ModelUniqueId: doc.ModelUniqueID,
-				MlFileAddr:    doc.MlFileAddr,
-				MlStorageSize: doc.StorageSize,
-			},
-		}
-	}
-
-	if len(doc.MlModels) > 0 {
-		record.MlModels = make([]MLModel, 0, len(doc.MlModels))
-		for _, mDoc := range doc.MlModels {
-			record.MlModels = append(record.MlModels, MLModel{
-				ModelUniqueId: mDoc.ModelUniqueID,
-				MlFileAddr:    mDoc.MlFileAddr,
-			})
-		}
-	}
-
-	c.JSON(http.StatusOK, record)
+	c.JSON(http.StatusOK, mlModelStoreRecordFromDocument(doc))
 }
 
 func (p *Processor) handleDownloadMLModelFile(c *gin.Context) {
@@ -520,19 +599,29 @@ func (p *Processor) handleUpdateIndividualMLModelStoreRecord(c *gin.Context) {
 
 	if len(req.MlModelInfo) > 0 {
 		info := req.MlModelInfo[0]
-		existing.ModelUniqueID = info.ModelUniqueId
-		existing.MlFileAddr = info.MlFileAddr
-		existing.StorageSize = info.MlStorageSize
-	} else if len(req.MlModels) > 0 {
-		m := req.MlModels[0]
-		existing.ModelUniqueID = m.ModelUniqueId
-		if m.MlFileAddr != "" {
-			existing.MlFileAddr = m.MlFileAddr
+		existing.ModelUniqueID = *info.ModelUniqueId
+		existing.SourceAddr = info.MlFileAddr.MLModelURL
+		existing.StorageSize = *info.MlStorageSize
+		allowedConsumers := make([]store.AllowedConsumerDoc, 0, len(info.AllowConsumerList))
+		for _, consumer := range info.AllowConsumerList {
+			allowedConsumers = append(allowedConsumers, store.AllowedConsumerDoc{
+				NfInstanceID: consumer.NfInstanceId,
+				NfSetID:      consumer.NfSetId,
+			})
 		}
+		existing.MlModelInfo = []store.MLModelInfoDoc{{
+			ModelUniqueID:     existing.ModelUniqueID,
+			MlFileAddr:        existing.MlFileAddr,
+			MlStorageSize:     existing.StorageSize,
+			AllowConsumerList: allowedConsumers,
+		}}
 	}
 
-	if req.StoreResult != "" {
-		existing.StoreResult = req.StoreResult
+	if req.ModelStoreResult != nil {
+		existing.ModelStoreResult = store.ModelStoreResultDoc{
+			ModelUniqueID: *req.ModelStoreResult.ModelUniqueId,
+			StoreResult:   req.ModelStoreResult.StoreResult,
+		}
 	}
 
 	if err := p.mlModelRepo.UpdateMLModelStoreRecord(dbCtx, storeTransId, existing); err != nil {
@@ -546,7 +635,7 @@ func (p *Processor) handleUpdateIndividualMLModelStoreRecord(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, req)
+	c.JSON(http.StatusOK, mlModelStoreRecordFromDocument(existing))
 }
 
 func (p *Processor) handleDeleteIndividualMLModelStoreRecord(c *gin.Context) {
@@ -593,15 +682,28 @@ func (p *Processor) handleDeleteIndividualMLModelStoreRecord(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+type modelSourceHTTPError struct {
+	statusCode int
+	status     string
+}
+
+func (e *modelSourceHTTPError) Error() string {
+	return fmt.Sprintf("source returned %s", e.status)
+}
+
 func downloadFile(url string, destPath string) (int64, error) {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("bad status code: %s", resp.Status)
+		return 0, &modelSourceHTTPError{
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+		}
 	}
 
 	out, err := os.Create(destPath)

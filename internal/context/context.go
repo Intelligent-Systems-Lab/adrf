@@ -32,6 +32,18 @@ type ADRFContext struct {
 	StartTime         time.Time
 }
 
+type ADRFInfo struct {
+	MLModelStorageInd bool `json:"mlModelStorageInd,omitempty"`
+	DataStorageInd    bool `json:"dataStorageInd,omitempty"`
+}
+
+// NFProfile supplements the pinned free5GC generated model with the Release 18
+// adrfInfoList field required by NRF discovery filters.
+type NFProfile struct {
+	models.NrfNfManagementNfProfile
+	AdrfInfoList map[string]ADRFInfo `json:"adrfInfoList"`
+}
+
 // Init initializes the singleton runtime context exactly once.
 func Init() {
 	once.Do(func() {
@@ -87,16 +99,20 @@ func (c *ADRFContext) GetIPv4Uri() string {
 }
 
 // BuildNfProfile constructs the 3GPP models.NrfNfManagementNfProfile for NRF Registration.
-func (c *ADRFContext) BuildNfProfile() *models.NrfNfManagementNfProfile {
-	profile := &models.NrfNfManagementNfProfile{
-		NfInstanceId:  c.NfId,
-		NfType:        models.NrfNfManagementNfType_ADRF,
-		NfStatus:      models.NrfNfManagementNfStatus_REGISTERED,
-		Locality:      c.Locality,
-		Ipv4Addresses: []string{c.RegisterIPv4},
-		CustomInfo: map[string]interface{}{
-			"mlModelStorageInd": true,
-			"dataStorageInd":    true,
+func (c *ADRFContext) BuildNfProfile() *NFProfile {
+	profile := &NFProfile{
+		NrfNfManagementNfProfile: models.NrfNfManagementNfProfile{
+			NfInstanceId:  c.NfId,
+			NfType:        models.NrfNfManagementNfType_ADRF,
+			NfStatus:      models.NrfNfManagementNfStatus_REGISTERED,
+			Locality:      c.Locality,
+			Ipv4Addresses: []string{c.RegisterIPv4},
+		},
+		AdrfInfoList: map[string]ADRFInfo{
+			"default": {
+				MLModelStorageInd: true,
+				DataStorageInd:    true,
+			},
 		},
 	}
 
@@ -114,10 +130,10 @@ func (c *ADRFContext) BuildNfProfile() *models.NrfNfManagementNfProfile {
 		}
 	}
 	if len(plmns) > 0 {
-		profile.PlmnList = plmns
+		profile.NrfNfManagementNfProfile.PlmnList = plmns
 	}
 	if len(snssais) > 0 {
-		profile.SNssais = snssais
+		profile.NrfNfManagementNfProfile.SNssais = snssais
 	}
 
 	// Define NF Services
@@ -144,6 +160,6 @@ func (c *ADRFContext) BuildNfProfile() *models.NrfNfManagementNfProfile {
 		}
 		services = append(services, serv)
 	}
-	profile.NfServices = services
+	profile.NrfNfManagementNfProfile.NfServices = services
 	return profile
 }

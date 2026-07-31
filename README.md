@@ -1,6 +1,13 @@
 # ADRF (Analytics Data Repository Function)
 
-This repository (`adrf`) implements the **Analytics Data Repository Function (ADRF)** microservice for 5G Core Networks, fully compliant with **3GPP TS 23.288**, **TS 29.575** (Stage 3), and OpenAPI 3.0 standards.
+This repository (`adrf`) implements the **Analytics Data Repository Function
+(ADRF)** microservice for 5G Core Networks. It contains a Release 18
+interoperability profile and several repository-specific extensions; those
+extensions are not part of the standardized TS 29.575 resource set.
+
+The exact boundary, implementation provenance, and NWDAF/PyMTLF/PyAnLF usage
+are documented in
+[Release 18 ADRF Interoperability Profile](docs/impl/release18-interoperability-profile.md).
 
 ---
 
@@ -20,7 +27,7 @@ graph LR
     NWDAF -- "2. POST /data-retrieval-subscriptions" --> ADRF
     ADRF -- "3. POST Notification (/collector/retrieval-notify)" --> NWDAF
     NWDAF -- "4. Forward Notification (/api/v1/mtlf/adrf-callback)" --> MTLF
-    MTLF -- "5. GET {fetchUri} (Download Snapshot)" --> ADRF
+    MTLF -- "5. GET /data-store-records?fetch-correlation-ids=..." --> ADRF
     MTLF -- "6. DELETE /data-retrieval-subscriptions/{id}" --> ADRF
     NWDAF -- "7. POST /mlmodel-store-records (Register Model)" --> ADRF
 ```
@@ -50,15 +57,15 @@ sequenceDiagram
     NWDAF-->>ADRF: 204 No Content
     NWDAF->>MTLF: Forward Notification to /api/v1/mtlf/adrf-callback
 
-    MTLF->>ADRF: GET /data-snapshots/{subId}/download
-    ADRF->>Mongo: Read Snapshot File
-    ADRF-->>MTLF: 200 OK (Application/JSON File)
+    MTLF->>ADRF: GET /data-store-records?fetch-correlation-ids={id}
+    ADRF->>Mongo: Read one matching store record
+    ADRF-->>MTLF: 200 OK (NadrfDataStoreRecord)
 
     MTLF->>ADRF: DELETE /data-retrieval-subscriptions/{subId}
     ADRF->>Mongo: Delete ./storage/snapshots/{subId}.json & Clear Sub State
     ADRF-->>MTLF: 204 No Content
 
-    Note over NWDAF,ADRF: ML Model Registration Phase (TS 29.575 Clause 4.2)
+    Note over NWDAF,ADRF: ML Model Registration Phase (TS 29.575 Clause 4.3)
     NWDAF->>ADRF: POST /nadrf-mlmodelmanagement/v1/mlmodel-store-records (Staging Model URL)
     ADRF->>Mongo: Store Model Metadata in mlmodel_store_records
     ADRF-->>NWDAF: 201 Created (Location: /mlmodel-store-records/{storeTransId})
@@ -77,12 +84,16 @@ sequenceDiagram
 #### `POST /nadrf-datamanagement/v1/data-retrieval-subscriptions`
 * Subscribes to historical data retrieval.
 * Triggers snapshot generation, exporting matched records into a local JSON snapshot file (`./storage/snapshots/{subscriptionId}.json`).
-* Asynchronously sends a `NadrfDataRetrievalNotification` callback to the subscriber's notification URI (`http://192.168.107.5:8080/collector/retrieval-notify`) containing 3GPP compliant `fetchInstruct.fetchUri`.
+* Asynchronously sends a `NadrfDataRetrievalNotification` callback to the subscriber's notification URI (`http://192.168.107.5:8080/collector/retrieval-notify`) containing fetch instructions.
 * **HTTP Response**: `201 Created` with `Location: /nadrf-datamanagement/v1/data-retrieval-subscriptions/{subscriptionId}` and `NadrfDataRetrievalSubscription` response body.
 
 #### `GET /nadrf-datamanagement/v1/data-snapshots/{subscriptionId}/download` (`fetchUri`)
 * Provides RESTful HTTP GET dataset download for exported snapshot files.
 * Allows consumers (such as `MTLF-subp`) to pull historical analytics data without requiring shared disk mounts.
+* **Extension**: this resource and its JSON-array response are not defined by
+  the Release 18 `Nadrf_DataManagement` OpenAPI. The NWDAF/PyMTLF profile uses
+  `fetchCorrIds` with the standard `/data-store-records` collection GET
+  instead.
 
 #### `DELETE /nadrf-datamanagement/v1/data-retrieval-subscriptions/{subscriptionId}` (`RetrievalUnsubscribe`)
 * Cancels an active data retrieval subscription.
@@ -95,20 +106,27 @@ sequenceDiagram
 
 #### `POST /nadrf-mlmodelmanagement/v1/mlmodel-store-records`
 * Registers newly trained ML model metadata and download URLs produced by NWDAF / MTLF.
-* **HTTP Response**: `201 Created` with `Location` header pointing to official ADRF download URI (`/nadrf-mlmodelmanagement/v1/mlmodel-store-records/{storeTransId}/model`).
+* **HTTP Response**: `201 Created` with `Location` identifying the created
+  store-record resource
+  (`/nadrf-mlmodelmanagement/v1/mlmodel-store-records/{storeTransId}`).
+* The returned `mlFileAddr` identifies the artifact download URL. This
+  implementation may use the non-standard `.../{storeTransId}/model` endpoint
+  for that address.
 
 ---
 
 ## 📑 OpenAPI 3.0 Schema Alignment
 
-ADRF strictly enforces OpenAPI 3.0 schemas specified in 3GPP TS 29.575:
+The following example shows the repository-specific snapshot extension. It is
+not the Release 18 RetrievalRequest response contract:
 
 ```json
 {
   "notifCorrId": "sub-12345",
   "timeStamp": "2026-07-30T09:00:00Z",
   "fetchInstruct": {
-    "fetchUri": "http://192.168.107.5:9888/nadrf-datamanagement/v1/data-snapshots/sub-12345/download"
+    "fetchUri": "http://192.168.107.5:9888/nadrf-datamanagement/v1/data-snapshots/sub-12345/download",
+    "fetchCorrIds": ["store-transaction-1"]
   }
 }
 ```

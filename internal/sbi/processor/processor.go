@@ -49,7 +49,7 @@ type dataStoreRecordWriter interface {
 type mlModelRecordWriter interface {
 	InsertMLModelStoreRecord(ctx context.Context, doc *store.MLModelStoreRecordDocument) error
 	GetMLModelStoreRecord(ctx context.Context, storeTransId string) (*store.MLModelStoreRecordDocument, error)
-	GetMLModelStoreRecords(ctx context.Context, modelUniqueIds []string) ([]*store.MLModelStoreRecordDocument, error)
+	GetMLModelStoreRecords(ctx context.Context, modelUniqueIds []int64) ([]*store.MLModelStoreRecordDocument, error)
 	UpdateMLModelStoreRecord(ctx context.Context, storeTransId string, doc *store.MLModelStoreRecordDocument) error
 	DeleteMLModelStoreRecord(ctx context.Context, storeTransId string) error
 }

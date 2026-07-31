@@ -1,5 +1,12 @@
 # ADRF Nadrf_DataManagement 實作規範與細節文件
 
+> **Standards boundary:** The snapshot download resource described below is a
+> repository extension, not a Release 18 TS 29.575 RetrievalRequest resource.
+> The NWDAF/PyMTLF deployment retrieves records through
+> `GET /data-store-records?fetch-correlation-ids=...`. See
+> [Release 18 ADRF Interoperability Profile](release18-interoperability-profile.md)
+> for the normative profile, provenance, and compatibility decision.
+
 ## 1. 服務介紹 (Overview)
 
 本文件記載 `adrf` 模組中關於 3GPP TS 29.575 **`Nadrf_DataManagement`** 服務項目的實作細節，包含資料儲存紀錄派發、快照匯出、`fetchUri` 下載端點及訂閱清理等。
@@ -24,13 +31,16 @@
 - **邏輯**：
   1. 接收 NWDAF / MTLF 之歷史資料檢索訂閱。
   2. 根據查詢條件檢索紀錄，並匯出為本地 JSON 快照檔案：`./storage/snapshots/{subscriptionId}.json`。
-  3. 構造 3GPP TS 29.575 OpenAPI 3.0 標準之 `NadrfDataRetrievalNotification` 物件：
+  3. 構造 `NadrfDataRetrievalNotification`。此 repository extension 將
+     snapshot URL 放入 `fetchUri`，但標準資料取回仍依靠
+     `fetchCorrIds` 與 `/data-store-records`：
      ```go
      notif := models.NadrfDataRetrievalNotification{
          NotifCorrId: subscriptionId,
          TimeStamp:   &now,
          FetchInstruct: &models.FetchInstruction{
              FetchUri: fmt.Sprintf("http://192.168.107.5:9888/nadrf-datamanagement/v1/data-snapshots/%s/download", subscriptionId),
+             FetchCorrIds: fetchCorrelationIDs,
          },
      }
      ```

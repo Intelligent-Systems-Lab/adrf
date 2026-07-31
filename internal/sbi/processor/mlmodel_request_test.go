@@ -19,14 +19,14 @@ import (
 )
 
 type stubMLModelRepo struct {
-	insertErr   error
-	inserted    []*store.MLModelStoreRecordDocument
-	fetchDoc    *store.MLModelStoreRecordDocument
-	fetchErr    error
-	listDocs    []*store.MLModelStoreRecordDocument
-	listErr     error
-	updateErr   error
-	deleteErr   error
+	insertErr error
+	inserted  []*store.MLModelStoreRecordDocument
+	fetchDoc  *store.MLModelStoreRecordDocument
+	fetchErr  error
+	listDocs  []*store.MLModelStoreRecordDocument
+	listErr   error
+	updateErr error
+	deleteErr error
 }
 
 func (s *stubMLModelRepo) InsertMLModelStoreRecord(_ context.Context, doc *store.MLModelStoreRecordDocument) error {
@@ -52,7 +52,7 @@ func (s *stubMLModelRepo) GetMLModelStoreRecord(_ context.Context, storeTransId 
 	return nil, nil
 }
 
-func (s *stubMLModelRepo) GetMLModelStoreRecords(_ context.Context, modelUniqueIds []string) ([]*store.MLModelStoreRecordDocument, error) {
+func (s *stubMLModelRepo) GetMLModelStoreRecords(_ context.Context, modelUniqueIds []int64) ([]*store.MLModelStoreRecordDocument, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
@@ -150,8 +150,9 @@ func TestMLModelStoreAndDownloadFlow(t *testing.T) {
 	postPayload := fmt.Sprintf(`{
 		"nfInstanceId": "nwdaf-instance-001",
 		"mlModelInfo": [{
-			"modelUniqueId": "uuid-1234-5678",
-			"mlFileAddr": "%s/download/uuid-1234-5678"
+			"modelUniqueId": 1720000000001,
+			"mlFileAddr": {"mLModelUrl": "%s/download/1720000000001"},
+			"mlStorageSize": 28
 		}]
 	}`, mockServer.URL)
 
@@ -178,8 +179,8 @@ func TestMLModelStoreAndDownloadFlow(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if res.StoreResult != "ML_MODEL_FILE_STORED_IN_ADRF" {
-		t.Fatalf("unexpected StoreResult: %s", res.StoreResult)
+	if res.ModelStoreResult == nil || res.ModelStoreResult.StoreResult != "ML_MODEL_FILE_STORED_IN_ADRF" {
+		t.Fatalf("unexpected ModelStoreResult: %+v", res.ModelStoreResult)
 	}
 
 	if len(repo.inserted) != 1 {
@@ -187,8 +188,8 @@ func TestMLModelStoreAndDownloadFlow(t *testing.T) {
 	}
 
 	doc := repo.inserted[0]
-	if doc.StoreResult != "ML_MODEL_FILE_STORED_IN_ADRF" {
-		t.Fatalf("unexpected db record StoreResult: %s", doc.StoreResult)
+	if doc.ModelStoreResult.StoreResult != "ML_MODEL_FILE_STORED_IN_ADRF" {
+		t.Fatalf("unexpected db record ModelStoreResult: %+v", doc.ModelStoreResult)
 	}
 	if doc.NfInstanceID != "nwdaf-instance-001" {
 		t.Fatalf("expected NfInstanceID nwdaf-instance-001, got %s", doc.NfInstanceID)
@@ -207,7 +208,7 @@ func TestMLModelStoreAndDownloadFlow(t *testing.T) {
 	// Step 4: Test GET /mlmodel-store-records
 	reqGetList := httptest.NewRequest(
 		http.MethodGet,
-		factory.AdrfMLModelManagementResUriPrefix+factory.AdrfMLModelStoreRecordsPath+"?model-unique-ids=uuid-1234-5678",
+		factory.AdrfMLModelManagementResUriPrefix+factory.AdrfMLModelStoreRecordsPath+"?model-unique-ids=1720000000001",
 		nil,
 	)
 	wGetList := httptest.NewRecorder()
@@ -217,12 +218,14 @@ func TestMLModelStoreAndDownloadFlow(t *testing.T) {
 		t.Fatalf("expected 200 OK, got %d", wGetList.Code)
 	}
 
-	var list []NadrfMLModelStoreRecord
-	if err := json.Unmarshal(wGetList.Body.Bytes(), &list); err != nil {
-		t.Fatalf("failed to parse list response: %v", err)
+	var retrieved NadrfMLModelStoreRecord
+	if err := json.Unmarshal(wGetList.Body.Bytes(), &retrieved); err != nil {
+		t.Fatalf("failed to parse retrieval response: %v", err)
 	}
-	if len(list) != 1 || list[0].MlModelInfo[0].ModelUniqueId != "uuid-1234-5678" {
-		t.Fatalf("unexpected list size or item: %+v", list)
+	if len(retrieved.MlModelInfo) != 1 ||
+		retrieved.MlModelInfo[0].ModelUniqueId == nil ||
+		*retrieved.MlModelInfo[0].ModelUniqueId != 1720000000001 {
+		t.Fatalf("unexpected retrieved record: %+v", retrieved)
 	}
 
 	// Step 5: Test GET /mlmodel-store-records/:storeTransId
@@ -261,8 +264,8 @@ func TestMLModelStoreAndDownloadFlow(t *testing.T) {
 	putPayload := fmt.Sprintf(`{
 		"nfInstanceId": "nwdaf-instance-001",
 		"mlModelInfo": [{
-			"modelUniqueId": "uuid-9999-9999",
-			"mlFileAddr": "http://updated-addr/model",
+			"modelUniqueId": 1720000000002,
+			"mlFileAddr": {"mLModelUrl": "http://updated-addr/model"},
 			"mlStorageSize": 9999
 		}]
 	}`)
@@ -280,7 +283,7 @@ func TestMLModelStoreAndDownloadFlow(t *testing.T) {
 	}
 
 	updatedDoc, _ := repo.GetMLModelStoreRecord(context.Background(), doc.StoreTransID)
-	if updatedDoc.ModelUniqueID != "uuid-9999-9999" || updatedDoc.MlFileAddr != "http://updated-addr/model" {
+	if updatedDoc.ModelUniqueID != 1720000000002 || updatedDoc.SourceAddr != "http://updated-addr/model" {
 		t.Fatalf("model record update was not persisted: %+v", updatedDoc)
 	}
 
@@ -328,8 +331,9 @@ func TestMLModelStoreDownloadFailed(t *testing.T) {
 	postPayload := fmt.Sprintf(`{
 		"nfInstanceId": "nwdaf-instance-001",
 		"mlModelInfo": [{
-			"modelUniqueId": "uuid-fail",
-			"mlFileAddr": "%s/download/uuid-fail"
+			"modelUniqueId": 1720000000003,
+			"mlFileAddr": {"mLModelUrl": "%s/download/1720000000003"},
+			"mlStorageSize": 10
 		}]
 	}`, mockServer.URL)
 
@@ -342,14 +346,21 @@ func TestMLModelStoreDownloadFailed(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected status 201 Created, got %d, body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 Not Found, got %d, body=%s", w.Code, w.Body.String())
 	}
 
-	var res NadrfMLModelStoreRecord
-	_ = json.Unmarshal(w.Body.Bytes(), &res)
-	if res.StoreResult != "ML_MODEL_FILE_DOWNLOAD_FAILED" {
-		t.Fatalf("expected failure store result, got: %s", res.StoreResult)
+	if len(repo.inserted) != 0 {
+		t.Fatalf("failed download must not create a retrievable record")
+	}
+	var problem struct {
+		Cause string `json:"cause"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("failed to decode ProblemDetails: %v", err)
+	}
+	if problem.Cause != "ML_MODEL_FILE_ADDRESS_NOT_FOUND" {
+		t.Fatalf("unexpected failure cause: %q", problem.Cause)
 	}
 
 	// Clean up storage directory
@@ -372,8 +383,9 @@ func TestMLModelStoreValidationRules(t *testing.T) {
 	// Case 1: Missing both nfInstanceId and nfSetId -> expect 400 Bad Request
 	payloadNoNf := `{
 		"mlModelInfo": [{
-			"modelUniqueId": "uuid-001",
-			"mlFileAddr": "http://localhost/model"
+			"modelUniqueId": 1720000000004,
+			"mlFileAddr": {"mLModelUrl": "http://localhost/model"},
+			"mlStorageSize": 10
 		}]
 	}`
 	req1 := httptest.NewRequest(http.MethodPost, factory.AdrfMLModelManagementResUriPrefix+factory.AdrfMLModelStoreRecordsPath, strings.NewReader(payloadNoNf))
@@ -389,8 +401,9 @@ func TestMLModelStoreValidationRules(t *testing.T) {
 		"nfInstanceId": "nwdaf-001",
 		"nfSetId": "nwdaf-set-001",
 		"mlModelInfo": [{
-			"modelUniqueId": "uuid-001",
-			"mlFileAddr": "http://localhost/model"
+			"modelUniqueId": 1720000000004,
+			"mlFileAddr": {"mLModelUrl": "http://localhost/model"},
+			"mlStorageSize": 10
 		}]
 	}`
 	req2 := httptest.NewRequest(http.MethodPost, factory.AdrfMLModelManagementResUriPrefix+factory.AdrfMLModelStoreRecordsPath, strings.NewReader(payloadBothNf))
@@ -411,8 +424,9 @@ func TestMLModelStoreValidationRules(t *testing.T) {
 	payloadNfSet := fmt.Sprintf(`{
 		"nfSetId": "nwdaf-set-001",
 		"mlModelInfo": [{
-			"modelUniqueId": "uuid-set-001",
-			"mlFileAddr": "%s/model"
+			"modelUniqueId": 1720000000005,
+			"mlFileAddr": {"mLModelUrl": "%s/model"},
+			"mlStorageSize": 12
 		}]
 	}`, mockServer.URL)
 	req3 := httptest.NewRequest(http.MethodPost, factory.AdrfMLModelManagementResUriPrefix+factory.AdrfMLModelStoreRecordsPath, strings.NewReader(payloadNfSet))

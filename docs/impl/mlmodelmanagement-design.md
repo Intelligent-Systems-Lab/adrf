@@ -1,5 +1,12 @@
 # ADRF Nadrf_MLModelManagement 設計文件 (Design Document)
 
+> **Historical design note:** This document records the initial repository
+> design. It does not distinguish every Release 18 resource from local
+> extensions. See
+> [Release 18 ADRF Interoperability Profile](release18-interoperability-profile.md)
+> for the current wire contract and the NWDAF/PyMTLF/PyAnLF integration
+> boundary.
+
 ## 1. 服務定位與 3GPP TS 29.575 架構 (Service Architecture)
 
 Analytics Data Repository Function (ADRF) 增加了 3GPP TS 29.575 標準規定的 **`Nadrf_MLModelManagement`** 服務，與原有的 `Nadrf_DataManagement` 並列，實現 5GC 中 ML 模型訓練產物的正式持久化、版控與分發。

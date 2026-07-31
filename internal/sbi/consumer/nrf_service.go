@@ -1,8 +1,11 @@
 package consumer
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -46,29 +49,39 @@ func (s *NrfService) getNFManagementClient(nrfUri string) *Nnrf_NFManagement.API
 }
 
 // SendRegisterNFInstance registers ADRF's NFProfile (with AdrfInfo) to NRF via PUT /nnrf-nfm/v1/nf-instances/{nfInstanceId}.
-func (s *NrfService) SendRegisterNFInstance(ctx context.Context, nrfUri string, nfInstanceId string, profile *models.NrfNfManagementNfProfile) (string, *models.ProblemDetails, error) {
-	client := s.getNFManagementClient(nrfUri)
-	if client == nil {
+func (s *NrfService) SendRegisterNFInstance(ctx context.Context, nrfUri string, nfInstanceId string, profile *adrf_context.NFProfile) (string, *models.ProblemDetails, error) {
+	if nrfUri == "" {
 		return "", nil, fmt.Errorf("empty NRF URI")
 	}
-
-	req := &Nnrf_NFManagement.RegisterNFInstanceRequest{
-		NfInstanceID:             &nfInstanceId,
-		NrfNfManagementNfProfile: profile,
+	body, err := json.Marshal(profile)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal ADRF NF profile: %w", err)
 	}
-
-	resp, err := client.NFInstanceIDDocumentApi.RegisterNFInstance(ctx, req)
+	url := fmt.Sprintf("%s/nnrf-nfm/v1/nf-instances/%s", nrfUri, nfInstanceId)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return "", nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		logger.ConsLog.Errorf("RegisterNFInstance to NRF[%s] failed: %v", nrfUri, err)
 		return "", nil, err
 	}
-
-	location := ""
-	if resp != nil && resp.Location != "" {
-		location = resp.Location
+	defer response.Body.Close()
+	responseBody, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return "", nil, readErr
+	}
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		var problem models.ProblemDetails
+		if json.Unmarshal(responseBody, &problem) == nil {
+			return "", &problem, fmt.Errorf("NRF registration returned HTTP %d", response.StatusCode)
+		}
+		return "", nil, fmt.Errorf("NRF registration returned HTTP %d", response.StatusCode)
 	}
 	logger.ConsLog.Infof("Successfully registered ADRF NFProfile[%s] to NRF[%s]", nfInstanceId, nrfUri)
-	return location, nil, nil
+	return response.Header.Get("Location"), nil, nil
 }
 
 // SendUpdateNFInstance sends periodic Keep-Alive Heartbeat PATCH to NRF.

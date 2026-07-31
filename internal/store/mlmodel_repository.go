@@ -17,31 +17,42 @@ import (
 const MLModelStoreRecordsCollectionName = "mlmodel_store_records"
 
 type MLModelInfoDoc struct {
-	ModelUniqueID string `bson:"modelUniqueId"`
-	MlFileAddr    string `bson:"mlFileAddr"`
-	MlStorageSize int64  `bson:"mlStorageSize,omitempty"`
+	ModelUniqueID     int64                `bson:"modelUniqueId"`
+	MlFileAddr        string               `bson:"mlFileAddr"`
+	MlStorageSize     int64                `bson:"mlStorageSize"`
+	AllowConsumerList []AllowedConsumerDoc `bson:"allowConsumerList,omitempty"`
 }
 
 type MLModelDoc struct {
-	ModelUniqueID string `bson:"modelUniqueId"`
-	MlFileAddr    string `bson:"mlFileAddr,omitempty"`
+	ModelUniqueID int64  `bson:"modelUniqueId"`
+	MlModel       []byte `bson:"mlModel"`
+}
+
+type AllowedConsumerDoc struct {
+	NfInstanceID string `bson:"nfInstanceId,omitempty"`
+	NfSetID      string `bson:"nfSetId,omitempty"`
+}
+
+type ModelStoreResultDoc struct {
+	ModelUniqueID int64  `bson:"modelUniqueId"`
+	StoreResult   string `bson:"storeResult"`
 }
 
 type MLModelStoreRecordDocument struct {
-	ID            string           `bson:"_id,omitempty"`
-	StoreTransID  string           `bson:"storeTransId"`
-	NfInstanceID  string           `bson:"nfInstanceId,omitempty"`
-	NfSetID       string           `bson:"nfSetId,omitempty"`
-	MlModelInfo   []MLModelInfoDoc `bson:"mlModelInfo,omitempty"`
-	MlModels      []MLModelDoc     `bson:"mlModels,omitempty"`
-	ModelUniqueID string           `bson:"modelUniqueId"`
-	MlFileAddr    string           `bson:"mlFileAddr"`
-	SourceAddr    string           `bson:"sourceAddr"`
-	StorageSize   int64            `bson:"storageSize"`
-	StoreResult   string           `bson:"storeResult"`
-	ExpiryTime    time.Time        `bson:"expiryTime,omitempty"`
-	CreatedAt     time.Time        `bson:"createdAt"`
-	UpdatedAt     time.Time        `bson:"updatedAt"`
+	ID               string              `bson:"_id,omitempty"`
+	StoreTransID     string              `bson:"storeTransId"`
+	NfInstanceID     string              `bson:"nfInstanceId,omitempty"`
+	NfSetID          string              `bson:"nfSetId,omitempty"`
+	MlModelInfo      []MLModelInfoDoc    `bson:"mlModelInfo,omitempty"`
+	MlModels         []MLModelDoc        `bson:"mlModels,omitempty"`
+	ModelUniqueID    int64               `bson:"modelUniqueId"`
+	MlFileAddr       string              `bson:"mlFileAddr"`
+	SourceAddr       string              `bson:"sourceAddr"`
+	StorageSize      int64               `bson:"storageSize"`
+	ModelStoreResult ModelStoreResultDoc `bson:"modelStoreResult"`
+	ExpiryTime       time.Time           `bson:"expiryTime,omitempty"`
+	CreatedAt        time.Time           `bson:"createdAt"`
+	UpdatedAt        time.Time           `bson:"updatedAt"`
 }
 
 type MLModelRepository struct {
@@ -70,7 +81,8 @@ func (r *MLModelRepository) EnsureIndexes(ctx context.Context) error {
 		{
 			Keys: bson.D{{Key: "modelUniqueId", Value: 1}},
 			Options: options.Index().
-				SetName("idx_mlmodel_unique_id"),
+				SetName("idx_mlmodel_unique_id").
+				SetUnique(true),
 		},
 		{
 			Keys: bson.D{{Key: "nfInstanceId", Value: 1}},
@@ -107,7 +119,7 @@ func (r *MLModelRepository) InsertMLModelStoreRecord(ctx context.Context, doc *M
 		return errors.New("mongodb client is not initialized")
 	}
 
-	logger.StoreLog.Debugf("Inserting mlmodel record: storeTransId=%s modelUniqueId=%s", doc.StoreTransID, doc.ModelUniqueID)
+	logger.StoreLog.Debugf("Inserting mlmodel record: storeTransId=%s modelUniqueId=%d", doc.StoreTransID, doc.ModelUniqueID)
 	_, err := r.collection().InsertOne(ctx, doc)
 	if err != nil {
 		return fmt.Errorf("failed to insert mlmodel store record: %w", err)
@@ -133,7 +145,7 @@ func (r *MLModelRepository) GetMLModelStoreRecord(ctx context.Context, storeTran
 	return &doc, nil
 }
 
-func (r *MLModelRepository) GetMLModelStoreRecords(ctx context.Context, modelUniqueIds []string) ([]*MLModelStoreRecordDocument, error) {
+func (r *MLModelRepository) GetMLModelStoreRecords(ctx context.Context, modelUniqueIds []int64) ([]*MLModelStoreRecordDocument, error) {
 	if mongoapi.Client == nil {
 		return nil, errors.New("mongodb client is not initialized")
 	}
@@ -167,17 +179,17 @@ func (r *MLModelRepository) UpdateMLModelStoreRecord(ctx context.Context, storeT
 	filter := bson.M{"storeTransId": storeTransId}
 	update := bson.M{
 		"$set": bson.M{
-			"nfInstanceId":  doc.NfInstanceID,
-			"nfSetId":       doc.NfSetID,
-			"mlModelInfo":   doc.MlModelInfo,
-			"mlModels":      doc.MlModels,
-			"modelUniqueId": doc.ModelUniqueID,
-			"mlFileAddr":    doc.MlFileAddr,
-			"sourceAddr":    doc.SourceAddr,
-			"storageSize":   doc.StorageSize,
-			"storeResult":   doc.StoreResult,
-			"expiryTime":    doc.ExpiryTime,
-			"updatedAt":     time.Now().UTC(),
+			"nfInstanceId":     doc.NfInstanceID,
+			"nfSetId":          doc.NfSetID,
+			"mlModelInfo":      doc.MlModelInfo,
+			"mlModels":         doc.MlModels,
+			"modelUniqueId":    doc.ModelUniqueID,
+			"mlFileAddr":       doc.MlFileAddr,
+			"sourceAddr":       doc.SourceAddr,
+			"storageSize":      doc.StorageSize,
+			"modelStoreResult": doc.ModelStoreResult,
+			"expiryTime":       doc.ExpiryTime,
+			"updatedAt":        time.Now().UTC(),
 		},
 	}
 
