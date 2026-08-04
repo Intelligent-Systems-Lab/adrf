@@ -28,7 +28,7 @@ graph LR
     ADRF -- "3. POST Notification (/collector/retrieval-notify)" --> NWDAF
     NWDAF -- "4. Forward Notification (/api/v1/mtlf/adrf-callback)" --> MTLF
     MTLF -- "5. GET /data-store-records?fetch-correlation-ids=..." --> ADRF
-    MTLF -- "6. DELETE /data-retrieval-subscriptions/{id}" --> ADRF
+    NWDAF -- "6. DELETE /data-retrieval-subscriptions/{id}" --> ADRF
     NWDAF -- "7. POST /mlmodel-store-records (Register Model)" --> ADRF
 ```
 
@@ -42,7 +42,7 @@ sequenceDiagram
     participant NWDAF as Go NWDAF Core (:8080)
     participant ADRF as ADRF Service (:9888)
     participant Mongo as MongoDB / File Store
-    participant MTLF as MTLF-subp Gateway (:9889)
+    participant MTLF as MTLF-subp Gateway (:9887)
 
     NWDAF->>ADRF: POST /data-store-records (Analytics Records)
     ADRF->>Mongo: Store Record in data_store_records
@@ -61,9 +61,9 @@ sequenceDiagram
     ADRF->>Mongo: Read one matching store record
     ADRF-->>MTLF: 200 OK (NadrfDataStoreRecord)
 
-    MTLF->>ADRF: DELETE /data-retrieval-subscriptions/{subId}
+    NWDAF->>ADRF: DELETE /data-retrieval-subscriptions/{subId}
     ADRF->>Mongo: Delete ./storage/snapshots/{subId}.json & Clear Sub State
-    ADRF-->>MTLF: 204 No Content
+    ADRF-->>NWDAF: 204 No Content
 
     Note over NWDAF,ADRF: ML Model Registration Phase (TS 29.575 Clause 4.3)
     NWDAF->>ADRF: POST /nadrf-mlmodelmanagement/v1/mlmodel-store-records (Staging Model URL)
