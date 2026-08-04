@@ -72,7 +72,7 @@ func HandleSnapshotDownloadRequest(c *gin.Context, subId string) {
 
 - **對應檔案**：`internal/sbi/processor/retrieval_subscription_delete.go`
 - **邏輯**：
-  1. 消費端 (如 `MTLF-subp`) 在完成快照下載與重訓啟動後，呼叫此刪除端點 (`RetrievalUnsubscribe`)。
+  1. 消費端 (`go-NWDAF`) 在完成歷史數據拉取與重訓任務下發後，呼叫此刪除端點 (`RetrievalUnsubscribe`)。
   2. ADRF 刪除記憶體與數據庫中的訂閱紀錄。
   3. **自動清理實體檔案**：主動刪除對應的快照 JSON 檔案 (`./storage/snapshots/{subscriptionId}.json`)，防止虛擬機磁碟空間暴增。
   4. 回傳 **`HTTP 204 No Content`**。
